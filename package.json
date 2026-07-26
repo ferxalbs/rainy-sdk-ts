@@ -8,11 +8,19 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsdown",
@@ -23,18 +31,29 @@
     "typecheck": "tsc --noEmit",
     "bench": "vitest bench"
   },
-  "keywords": ["rainy", "sdk", "telemetry", "tracing", "ai", "activators", "counters", "hooks"],
+  "keywords": [
+    "rainy",
+    "sdk",
+    "telemetry",
+    "tracing",
+    "ai",
+    "activators",
+    "counters",
+    "hooks"
+  ],
   "author": "ferxalbs",
   "license": "Apache-2.0",
   "dependencies": {
     "mitt": "^3.0.1",
-    "zod": "^4.0.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^3.0.0",
-    "tsdown": "^0.12.0",
-    "typescript": "^5.5.0",
-    "vitest": "^3.0.0"
+    "@vitest/coverage-v8": "^4.1.10",
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
-  "engines": { "node": ">=22.0.0" }
+  "engines": {
+    "node": ">=22.0.0"
+  }
 }
