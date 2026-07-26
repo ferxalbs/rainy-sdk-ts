@@ -1,35 +1,12 @@
-# Dependencies
 node_modules/
-
-# Build output
 dist/
-
-# TypeScript
 *.tsbuildinfo
-
-# Env files
 .env
 .env.*
 !.env.example
-
-# Editor
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-
-# Test coverage
 coverage/
-.nyc_output/
-
-# Misc
+*.log
 *.tgz
+.DS_Store

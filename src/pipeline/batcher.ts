@@ -1,32 +1,20 @@
 import type { TraceRecord } from '../types/public.js';
 
-/**
- * Collects TraceRecord objects and emits fixed-size batches.
- */
 export class Batcher {
-  readonly #batchSize: number;
-  readonly #pending: TraceRecord[] = [];
+  readonly #size: number;
+  readonly #buf: TraceRecord[] = [];
 
-  constructor(batchSize: number) {
-    this.#batchSize = batchSize;
-  }
+  constructor(size: number) { this.#size = size; }
 
-  get pendingCount(): number {
-    return this.#pending.length;
-  }
+  get pendingCount(): number { return this.#buf.length; }
 
-  /** Add a record; returns a full batch if threshold is reached, else null. */
+  /** Returns a full batch when threshold is hit, otherwise null. */
   add(record: TraceRecord): TraceRecord[] | null {
-    this.#pending.push(record);
-    if (this.#pending.length >= this.#batchSize) {
-      return this.flush();
-    }
-    return null;
+    this.#buf.push(record);
+    return this.#buf.length >= this.#size ? this.flush() : null;
   }
 
-  /** Force-flush all pending records regardless of batch size. */
   flush(): TraceRecord[] {
-    const batch = this.#pending.splice(0, this.#pending.length);
-    return batch;
+    return this.#buf.splice(0, this.#buf.length);
   }
 }

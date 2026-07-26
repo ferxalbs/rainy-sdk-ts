@@ -1,167 +1,288 @@
-import { RainyClient } from '../src/core/client.js';
+import { describe, it, expect, vi } from 'vitest';
 import { RainySession } from '../src/core/session.js';
+import { sha256Hex } from '../src/crypto/hasher.js';
 import { scoreTrace } from '../src/pipeline/scorer.js';
-import { anonymize } from '../src/pipeline/anonymizer.js';
+import { anonymizeContext } from '../src/pipeline/anonymizer.js';
 import { Batcher } from '../src/pipeline/batcher.js';
 import { OfflineBuffer } from '../src/transport/offline.js';
-import { sha256Hex } from '../src/crypto/hasher.js';
-import { makeSessionId } from '../src/types/branded.js';
+import { CircuitBreaker } from '../src/transport/circuit-breaker.js';
+import { Counter } from '../src/telemetry/counter.js';
+import { Activator } from '../src/telemetry/activator.js';
+import { TelemetryAggregator } from '../src/telemetry/aggregator.js';
+import { HookRegistry } from '../src/hooks/registry.js';
+import { RainyClient } from '../src/core/client.js';
+import { makeSessionId, makeTraceId, makeClientId } from '../src/types/branded.js';
+import type { TraceRecord } from '../src/types/public.js';
 
-// ── RainySession ────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const sid = makeSessionId('test-session');
+
+const makeRecord = (id: string, tags: string[] = []): TraceRecord => ({
+  id: makeTraceId(id),
+  sessionId: sid,
+  clientId: makeClientId('test'),
+  thoughtHash: 'h',
+  context: {},
+  tags,
+  qualityScore: 0.8,
+  timestamp: new Date().toISOString(),
+});
+
+// ── RainySession ─────────────────────────────────────────────────────────────
 
 describe('RainySession', () => {
-  it('generates a UUID session ID by default', () => {
-    const s = new RainySession();
-    expect(s.id).toMatch(
+  it('auto-generates a UUID', () => {
+    expect(new RainySession().id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
   });
 
-  it('starts active and can be ended', () => {
+  it('tracks uptime', async () => {
     const s = new RainySession();
-    expect(s.isActive).toBe(true);
+    await new Promise(r => setTimeout(r, 5));
+    expect(s.uptimeMs).toBeGreaterThan(0);
+  });
+
+  it('becomes inactive on end()', () => {
+    const s = new RainySession();
     s.end();
     expect(s.isActive).toBe(false);
   });
 });
 
-// ── sha256Hex ───────────────────────────────────────────────────────────────
+// ── Crypto ───────────────────────────────────────────────────────────────────
 
 describe('sha256Hex', () => {
-  it('returns a 64-char hex string', () => {
-    expect(sha256Hex('hello')).toHaveLength(64);
-  });
-
-  it('is deterministic', () => {
-    expect(sha256Hex('rainy')).toBe(sha256Hex('rainy'));
-  });
+  it('produces 64-char hex', () => expect(sha256Hex('x')).toHaveLength(64));
+  it('is deterministic',    () => expect(sha256Hex('rainy')).toBe(sha256Hex('rainy')));
 });
 
-// ── scoreTrace ──────────────────────────────────────────────────────────────
+// ── Scorer ───────────────────────────────────────────────────────────────────
 
 describe('scoreTrace', () => {
-  it('returns 0 for trivially short thoughts', () => {
-    expect(scoreTrace({ sessionId: makeSessionId('s'), thought: 'hi' })).toBe(0);
-  });
+  it('returns 0 for trivial input', () =>
+    expect(scoreTrace({ sessionId: sid, thought: 'hi' })).toBe(0));
 
-  it('returns > 0.4 for a rich trace', () => {
-    const score = scoreTrace({
-      sessionId: makeSessionId('s'),
-      thought:
-        'I should analyse the user request carefully. First I will check the database. Then I will format the response correctly.',
-      context: { taskType: 'reasoning', model: 'gpt-4', userId: 'u1' },
+  it('returns > 0.5 for rich input', () => {
+    const s = scoreTrace({
+      sessionId: sid,
+      thought: 'I need to check the auth state first. Then query the database. Finally format the response.',
+      context: { step: 'auth', model: 'gpt-4o', user: 'u1', env: 'prod' },
     });
-    expect(score).toBeGreaterThan(0.4);
+    expect(s).toBeGreaterThan(0.5);
   });
 });
 
-// ── anonymize ───────────────────────────────────────────────────────────────
+// ── Anonymizer ───────────────────────────────────────────────────────────────
 
-describe('anonymize', () => {
-  it('replaces thought with a hash', () => {
-    const raw = 'top secret reasoning';
-    const { thoughtHash } = anonymize({ sessionId: makeSessionId('s'), thought: raw });
-    expect(thoughtHash).not.toContain('top secret');
-    expect(thoughtHash).toHaveLength(64);
+describe('anonymizeContext', () => {
+  it('redacts emails', () => {
+    const r = anonymizeContext({ user: 'alice@example.com', task: 'pay' });
+    expect(r['user']).toMatch(/\[redacted:/);
+    expect(r['task']).toBe('pay');
   });
 
-  it('hashes email-like context values', () => {
-    const { context } = anonymize({
-      sessionId: makeSessionId('s'),
-      thought: 'x'.repeat(20),
-      context: { user: 'alice@example.com', task: 'reasoning' },
-    });
-    expect(context['user']).not.toBe('alice@example.com');
-    expect(context['task']).toBe('reasoning');
+  it('redacts UUIDs', () => {
+    const r = anonymizeContext({ id: '550e8400-e29b-41d4-a716-446655440000' });
+    expect(r['id']).toMatch(/\[redacted:/);
   });
 });
 
-// ── Batcher ─────────────────────────────────────────────────────────────────
+// ── Batcher ──────────────────────────────────────────────────────────────────
 
 describe('Batcher', () => {
-  const makeRecord = (n: number) =>
-    ({
-      id: `trace-${n}` as any,
-      sessionId: makeSessionId('s'),
-      clientId: 'c' as any,
-      thoughtHash: 'h',
-      context: {},
-      qualityScore: 0.8,
-      timestamp: new Date().toISOString(),
-    }) as any;
-
-  it('returns null until batch is full', () => {
+  it('emits batch at threshold', () => {
     const b = new Batcher(3);
-    expect(b.add(makeRecord(1))).toBeNull();
-    expect(b.add(makeRecord(2))).toBeNull();
-    const batch = b.add(makeRecord(3));
-    expect(batch).toHaveLength(3);
+    expect(b.add(makeRecord('a'))).toBeNull();
+    expect(b.add(makeRecord('b'))).toBeNull();
+    expect(b.add(makeRecord('c'))).toHaveLength(3);
   });
 
-  it('flush() returns all pending records', () => {
+  it('flush drains pending', () => {
     const b = new Batcher(10);
-    b.add(makeRecord(1));
-    b.add(makeRecord(2));
+    b.add(makeRecord('x'));
+    b.add(makeRecord('y'));
     expect(b.flush()).toHaveLength(2);
     expect(b.pendingCount).toBe(0);
   });
 });
 
-// ── OfflineBuffer ───────────────────────────────────────────────────────────
+// ── OfflineBuffer ────────────────────────────────────────────────────────────
 
 describe('OfflineBuffer', () => {
-  const makeRecord = (id: string) =>
-    ({
-      id,
-      sessionId: makeSessionId('s'),
-      clientId: 'c' as any,
-      thoughtHash: 'h',
-      context: {},
-      qualityScore: 0.8,
-      timestamp: new Date().toISOString(),
-    }) as any;
-
-  it('respects max size', () => {
+  it('respects max capacity', () => {
     const buf = new OfflineBuffer(2);
     expect(buf.enqueue(makeRecord('a'))).toBe(true);
     expect(buf.enqueue(makeRecord('b'))).toBe(true);
     expect(buf.enqueue(makeRecord('c'))).toBe(false);
-    expect(buf.size).toBe(2);
   });
 
-  it('drain() returns all ready records', () => {
-    const buf = new OfflineBuffer(10);
+  it('drain returns ready records', () => {
+    const buf = new OfflineBuffer(5);
     buf.enqueue(makeRecord('x'));
-    expect(buf.drain(Date.now() + 1000)).toHaveLength(1);
+    expect(buf.drain(Date.now() + 9999)).toHaveLength(1);
   });
 });
 
-// ── RainyClient (unit, no network) ─────────────────────────────────────────
+// ── CircuitBreaker ───────────────────────────────────────────────────────────
+
+describe('CircuitBreaker', () => {
+  it('opens after threshold failures', () => {
+    const cb = new CircuitBreaker(3, 60_000);
+    cb.record(false);
+    cb.record(false);
+    expect(cb.state).toBe('closed');
+    cb.record(false);
+    expect(cb.state).toBe('open');
+  });
+
+  it('closes on success', () => {
+    const cb = new CircuitBreaker(1, 60_000);
+    cb.record(false);
+    expect(cb.isOpen).toBe(true);
+    cb.record(true);
+    expect(cb.state).toBe('closed');
+  });
+
+  it('transitions to half-open after resetMs', async () => {
+    const cb = new CircuitBreaker(1, 10);
+    cb.record(false);
+    await new Promise(r => setTimeout(r, 15));
+    expect(cb.state).toBe('half-open');
+  });
+
+  it('fires onChange callback', () => {
+    const fn = vi.fn();
+    const cb = new CircuitBreaker(1, 60_000, fn);
+    cb.record(false);
+    expect(fn).toHaveBeenCalledWith('open');
+  });
+});
+
+// ── Counter ──────────────────────────────────────────────────────────────────
+
+describe('Counter', () => {
+  it('increments and resets', () => {
+    const c = new Counter('test');
+    c.inc(); c.inc(); c.add(3);
+    expect(c.value).toBe(5);
+    c.reset();
+    expect(c.value).toBe(0);
+  });
+});
+
+// ── Activator ────────────────────────────────────────────────────────────────
+
+describe('Activator', () => {
+  it('fires when all tags match', () => {
+    const fired = vi.fn();
+    const a = new Activator();
+    a.add({ name: 'test', tags: ['reasoning', 'critical'], onActivate: fired });
+    a.evaluate(makeRecord('r', ['reasoning', 'critical', 'extra']));
+    expect(fired).toHaveBeenCalledOnce();
+    expect(a.activationCounts()).toEqual({ test: 1 });
+  });
+
+  it('does not fire on partial tags', () => {
+    const fired = vi.fn();
+    const a = new Activator();
+    a.add({ name: 'test', tags: ['reasoning', 'critical'], onActivate: fired });
+    a.evaluate(makeRecord('r', ['reasoning']));
+    expect(fired).not.toHaveBeenCalled();
+  });
+});
+
+// ── TelemetryAggregator ──────────────────────────────────────────────────────
+
+describe('TelemetryAggregator', () => {
+  it('registers and tracks counters', () => {
+    const agg = new TelemetryAggregator();
+    agg.counter('a').inc();
+    agg.counter('a').add(4);
+    agg.counter('b').inc();
+    expect(agg.allCounters()).toEqual({ a: 5, b: 1 });
+  });
+});
+
+// ── HookRegistry ─────────────────────────────────────────────────────────────
+
+describe('HookRegistry', () => {
+  it('emits and receives events', () => {
+    const fn = vi.fn();
+    const h = new HookRegistry();
+    h.on('trace:after', fn);
+    h.emit('trace:after', makeRecord('x') as unknown as undefined);
+    expect(fn).toHaveBeenCalledOnce();
+  });
+
+  it('off removes handler', () => {
+    const fn = vi.fn();
+    const h = new HookRegistry();
+    h.on('trace:skipped', fn);
+    h.off('trace:skipped', fn);
+    h.emit('trace:skipped', makeRecord('x') as unknown as undefined);
+    expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+// ── RainyClient integration ───────────────────────────────────────────────────
 
 describe('RainyClient', () => {
-  it('exposes a default session', () => {
-    const client = new RainyClient({
-      clientId: 'test-client',
-      apiKey: 'test-key',
-      endpoint: 'https://api.rainy.test',
+  const makeClient = () => new RainyClient({
+    clientId: 'test',
+    apiKey:   'test-key',
+    endpoint: 'https://api.rainy.test',
+  });
+
+  it('exposes a live session', () => {
+    const c = makeClient();
+    expect(c.session.isActive).toBe(true);
+    void c.destroy();
+  });
+
+  it('snapshot has expected keys', () => {
+    const c = makeClient();
+    const s = c.snapshot();
+    expect(s).toHaveProperty('counters');
+    expect(s).toHaveProperty('activations');
+    expect(s).toHaveProperty('circuitBreakerState', 'closed');
+    void c.destroy();
+  });
+
+  it('skips low-quality traces and increments counter', async () => {
+    const c = makeClient();
+    await c.trace({ sessionId: c.session.id, thought: 'hi' });
+    expect(c.snapshot().totalSkipped).toBe(1);
+    void c.destroy();
+  });
+
+  it('activator fires on matching tags', async () => {
+    const fired = vi.fn();
+    const c = makeClient();
+    c.addActivator({ name: 'critical', tags: ['critical'], onActivate: fired });
+    await c.trace({
+      sessionId: c.session.id,
+      thought: 'This is a critical reasoning step that requires careful analysis of the data.',
+      tags: ['critical'],
     });
-    expect(client.session).toBeInstanceOf(RainySession);
-    expect(client.session.isActive).toBe(true);
-    void client.destroy();
+    expect(fired).toHaveBeenCalledOnce();
+    void c.destroy();
   });
 
   it('throws after destroy', async () => {
-    const client = new RainyClient({
-      clientId: 'test-client',
-      apiKey: 'test-key',
-      endpoint: 'https://api.rainy.test',
-    });
-    await client.destroy();
-    await expect(
-      client.trace({
-        sessionId: makeSessionId('s'),
-        thought: 'x'.repeat(50),
-      }),
-    ).rejects.toThrow('destroyed');
+    const c = makeClient();
+    await c.destroy();
+    await expect(c.trace({ sessionId: c.session.id, thought: 'x'.repeat(50) }))
+      .rejects.toThrow('destroyed');
+  });
+
+  it('hook fires on trace:before', async () => {
+    const fn = vi.fn();
+    const c = makeClient();
+    c.hooks.on('trace:before', fn);
+    await c.trace({ sessionId: c.session.id, thought: 'hi' });
+    expect(fn).toHaveBeenCalledOnce();
+    void c.destroy();
   });
 });

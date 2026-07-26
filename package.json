@@ -1,54 +1,40 @@
 {
   "name": "rainy-sdk-ts",
-  "version": "0.1.0",
-  "description": "TypeScript SDK for Rainy API — anonymous thinking-trace collection with batching, retry, offline buffer and quality scoring",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
+  "version": "0.2.0",
+  "description": "High-performance telemetry SDK for Rainy API — activators, counters, hooks, circuit breaker, offline buffer. Fills the gaps the OpenAI SDK never will.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
+  "sideEffects": false,
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
-    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "bench": "vitest bench"
   },
-  "keywords": [
-    "rainy",
-    "sdk",
-    "tracing",
-    "analytics",
-    "anonymous",
-    "ai",
-    "thinking-traces"
-  ],
+  "keywords": ["rainy", "sdk", "telemetry", "tracing", "ai", "activators", "counters", "hooks"],
   "author": "ferxalbs",
   "license": "Apache-2.0",
+  "dependencies": {
+    "mitt": "^3.0.1",
+    "zod": "^4.0.0"
+  },
   "devDependencies": {
-    "@types/jest": "^29.5.12",
-    "@types/node": "^20.14.0",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.1.5",
-    "tsup": "^8.1.0",
-    "typescript": "^5.4.5"
+    "@vitest/coverage-v8": "^3.0.0",
+    "tsdown": "^0.12.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
   },
-  "jest": {
-    "preset": "ts-jest",
-    "testEnvironment": "node",
-    "testMatch": [
-      "**/tests/**/*.test.ts"
-    ]
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "engines": { "node": ">=22.0.0" }
 }

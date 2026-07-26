@@ -1,25 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import { makeTraceId } from '../types/branded.js';
-import { anonymize } from '../pipeline/anonymizer.js';
+import { sha256Hex } from '../crypto/hasher.js';
+import { anonymizeContext } from '../pipeline/anonymizer.js';
 import { scoreTrace } from '../pipeline/scorer.js';
 import type { TraceInput, TraceRecord } from '../types/public.js';
 import type { ClientId } from '../types/branded.js';
 
-/**
- * Builds a fully processed TraceRecord from raw TraceInput.
- * Applies anonymisation and quality scoring.
- */
-export function buildTrace(input: TraceInput, clientId: ClientId): TraceRecord {
-  const { thoughtHash, context } = anonymize(input);
-  const qualityScore = scoreTrace(input);
-
+export function buildTrace(
+  input: TraceInput,
+  clientId: ClientId,
+  startedAt?: number,
+): TraceRecord {
   return {
-    id: makeTraceId(randomUUID()),
-    sessionId: input.sessionId,
+    id:           makeTraceId(randomUUID()),
+    sessionId:    input.sessionId,
     clientId,
-    thoughtHash,
-    context,
-    qualityScore,
-    timestamp: input.timestamp ?? new Date().toISOString(),
+    thoughtHash:  sha256Hex(input.thought),
+    context:      anonymizeContext(input.context ?? {}),
+    tags:         input.tags ?? [],
+    qualityScore: scoreTrace(input),
+    timestamp:    input.timestamp ?? new Date().toISOString(),
+    durationMs:   startedAt !== undefined ? Date.now() - startedAt : undefined,
   };
 }

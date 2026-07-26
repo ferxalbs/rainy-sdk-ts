@@ -1,40 +1,40 @@
 import type { TraceId, SessionId, ClientId } from './branded.js';
 
-// ── Client configuration ───────────────────────────────────────────────────
+// ── Config ───────────────────────────────────────────────────────────────────
 
 export interface RainyClientOptions {
-  /** Your Rainy application client ID. */
   clientId: string;
-  /** Your Rainy API key. */
   apiKey: string;
-  /** Base URL of the Rainy API endpoint. */
   endpoint: string;
-  /** Number of traces to accumulate before auto-flushing. Default: 20 */
+  /** Max traces per HTTP batch. @default 25 */
   batchSize?: number;
-  /** Interval in ms between automatic flush attempts. Default: 5000 */
+  /** Auto-flush interval ms. @default 4000 */
   flushIntervalMs?: number;
-  /** Maximum retry attempts on transient HTTP errors. Default: 3 */
+  /** HTTP retry attempts. @default 4 */
   maxRetries?: number;
-  /** Maximum traces to hold in the offline buffer. Default: 200 */
+  /** Offline buffer capacity. @default 500 */
   offlineBufferSize?: number;
-  /** Minimum quality score [0–1] required to submit a trace. Default: 0.4 */
+  /** Minimum quality score [0–1] to accept a trace. @default 0.35 */
   minQualityScore?: number;
+  /** Circuit breaker: consecutive failures before opening. @default 5 */
+  circuitBreakerThreshold?: number;
+  /** Circuit breaker: ms before half-open probe. @default 15000 */
+  circuitBreakerResetMs?: number;
 }
 
-// ── Trace input ────────────────────────────────────────────────────────────
+// ── Trace ────────────────────────────────────────────────────────────────────
 
 export interface TraceInput {
-  /** Session this trace belongs to. */
   sessionId: SessionId;
-  /** The thinking/reasoning text to record. */
+  /** Raw thinking / reasoning text. Hashed before transmission. */
   thought: string;
-  /** Optional arbitrary context metadata. */
+  /** Arbitrary context metadata. */
   context?: Record<string, unknown>;
-  /** Optional ISO-8601 timestamp; defaults to now. */
+  /** ISO-8601 override. Defaults to Date.now(). */
   timestamp?: string;
+  /** Caller-supplied tags for activator matching. */
+  tags?: string[];
 }
-
-// ── Trace record (after processing) ───────────────────────────────────────
 
 export interface TraceRecord {
   id: TraceId;
@@ -42,15 +42,57 @@ export interface TraceRecord {
   clientId: ClientId;
   thoughtHash: string;
   context: Record<string, unknown>;
+  tags: string[];
   qualityScore: number;
   timestamp: string;
+  durationMs?: number;
 }
-
-// ── Flush result ───────────────────────────────────────────────────────────
 
 export interface FlushResult {
   submitted: number;
   skipped: number;
   failed: number;
+  buffered: number;
   errors: Error[];
+}
+
+// ── Telemetry ────────────────────────────────────────────────────────────────
+
+export interface TelemetrySnapshot {
+  counters: Record<string, number>;
+  activations: Record<string, number>;
+  flushCount: number;
+  totalSubmitted: number;
+  totalFailed: number;
+  totalSkipped: number;
+  offlineBufferSize: number;
+  circuitBreakerState: 'closed' | 'open' | 'half-open';
+  uptimeMs: number;
+}
+
+// ── Hooks ────────────────────────────────────────────────────────────────────
+
+export type HookEvent =
+  | 'trace:before'
+  | 'trace:after'
+  | 'trace:skipped'
+  | 'flush:before'
+  | 'flush:after'
+  | 'batch:sent'
+  | 'circuit:open'
+  | 'circuit:closed'
+  | 'offline:enqueue'
+  | 'offline:drain';
+
+export type HookHandler<T = unknown> = (payload: T) => void | Promise<void>;
+
+// ── Activators ───────────────────────────────────────────────────────────────
+
+export interface ActivatorRule {
+  /** Activator fires when all these tags are present in the trace. */
+  tags: string[];
+  /** Human-readable name for this activator. */
+  name: string;
+  /** Optional callback executed when the activator fires. */
+  onActivate?: (trace: TraceRecord) => void;
 }

@@ -1,56 +1,38 @@
 import type { TraceRecord } from '../types/public.js';
 import type { QueueEntry } from '../types/internal.js';
 
-/**
- * In-memory offline buffer.
- * Holds traces when the HTTP transport is unavailable, replays them on flush.
- */
 export class OfflineBuffer {
-  readonly #maxSize: number;
-  readonly #queue: QueueEntry[] = [];
+  readonly #max: number;
+  readonly #q: QueueEntry[] = [];
 
-  constructor(maxSize: number) {
-    this.#maxSize = maxSize;
-  }
+  constructor(max: number) { this.#max = max; }
 
-  get size(): number {
-    return this.#queue.length;
-  }
-
-  get isFull(): boolean {
-    return this.#queue.length >= this.#maxSize;
-  }
+  get size(): number    { return this.#q.length; }
+  get isFull(): boolean { return this.#q.length >= this.#max; }
 
   enqueue(record: TraceRecord): boolean {
     if (this.isFull) return false;
-    this.#queue.push({ record, attempts: 0, nextAttemptAt: 0 });
+    this.#q.push({ record, attempts: 0, nextAttemptAt: 0 });
     return true;
   }
 
-  /** Returns all ready-to-retry entries (nextAttemptAt <= now). */
   drain(now = Date.now()): TraceRecord[] {
-    const ready: TraceRecord[] = [];
-    for (const entry of this.#queue) {
-      if (entry.nextAttemptAt <= now) {
-        entry.attempts++;
-        entry.nextAttemptAt = now + backoff(entry.attempts);
-        ready.push(entry.record);
+    const out: TraceRecord[] = [];
+    for (const e of this.#q) {
+      if (e.nextAttemptAt <= now) {
+        e.attempts++;
+        e.nextAttemptAt = now + Math.min(500 * 2 ** e.attempts, 30_000);
+        out.push(e.record);
       }
     }
-    return ready;
+    return out;
   }
 
-  /** Removes successfully submitted records from the buffer. */
   acknowledge(ids: Set<string>): void {
-    const idx = this.#queue.findIndex((e) => ids.has(e.record.id));
-    if (idx !== -1) this.#queue.splice(idx, 1);
+    for (let i = this.#q.length - 1; i >= 0; i--) {
+      if (ids.has(this.#q[i]!.record.id)) this.#q.splice(i, 1);
+    }
   }
 
-  clear(): void {
-    this.#queue.length = 0;
-  }
-}
-
-function backoff(attempt: number): number {
-  return Math.min(500 * 2 ** attempt, 30_000);
+  clear(): void { this.#q.length = 0; }
 }
