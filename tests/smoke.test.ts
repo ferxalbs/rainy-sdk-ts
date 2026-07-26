@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { RainySession } from '../src/core/session.js';
 import { sha256Hex } from '../src/crypto/hasher.js';
 import { scoreTrace } from '../src/pipeline/scorer.js';
@@ -10,9 +10,13 @@ import { Counter } from '../src/telemetry/counter.js';
 import { Activator } from '../src/telemetry/activator.js';
 import { TelemetryAggregator } from '../src/telemetry/aggregator.js';
 import { HookRegistry } from '../src/hooks/registry.js';
-import { RainyClient } from '../src/core/client.js';
-import { makeSessionId, makeTraceId, makeClientId } from '../src/types/branded.js';
-import type { TraceRecord } from '../src/types/public.js';
+import { RainyClient, RainySdk } from '../src/index.js';
+import {
+  makeSessionId,
+  makeTraceId,
+  makeClientId,
+} from '../src/types/branded.js';
+import type { BatchEnvelope, TraceRecord } from '../src/types/public.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +33,13 @@ const makeRecord = (id: string, tags: string[] = []): TraceRecord => ({
   timestamp: new Date().toISOString(),
 });
 
+const makeEnv = (id: string, tags: string[] = []): BatchEnvelope => ({
+  kind: 'trace',
+  id,
+  payload: makeRecord(id, tags),
+  createdAt: Date.now(),
+});
+
 // ── RainySession ─────────────────────────────────────────────────────────────
 
 describe('RainySession', () => {
@@ -40,7 +51,7 @@ describe('RainySession', () => {
 
   it('tracks uptime', async () => {
     const s = new RainySession();
-    await new Promise(r => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 5));
     expect(s.uptimeMs).toBeGreaterThan(0);
   });
 
@@ -55,7 +66,8 @@ describe('RainySession', () => {
 
 describe('sha256Hex', () => {
   it('produces 64-char hex', () => expect(sha256Hex('x')).toHaveLength(64));
-  it('is deterministic',    () => expect(sha256Hex('rainy')).toBe(sha256Hex('rainy')));
+  it('is deterministic', () =>
+    expect(sha256Hex('rainy')).toBe(sha256Hex('rainy')));
 });
 
 // ── Scorer ───────────────────────────────────────────────────────────────────
@@ -67,7 +79,8 @@ describe('scoreTrace', () => {
   it('returns > 0.5 for rich input', () => {
     const s = scoreTrace({
       sessionId: sid,
-      thought: 'I need to check the auth state first. Then query the database. Finally format the response.',
+      thought:
+        'I need to check the auth state first. Then query the database. Finally format the response.',
       context: { step: 'auth', model: 'gpt-4o', user: 'u1', env: 'prod' },
     });
     expect(s).toBeGreaterThan(0.5);
@@ -79,13 +92,15 @@ describe('scoreTrace', () => {
 describe('anonymizeContext', () => {
   it('redacts emails', () => {
     const r = anonymizeContext({ user: 'alice@example.com', task: 'pay' });
-    expect(r['user']).toMatch(/\[redacted:/);
+    expect(r['user']).toMatch(/REDACTED/);
     expect(r['task']).toBe('pay');
   });
 
   it('redacts UUIDs', () => {
-    const r = anonymizeContext({ id: '550e8400-e29b-41d4-a716-446655440000' });
-    expect(r['id']).toMatch(/\[redacted:/);
+    const r = anonymizeContext({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+    });
+    expect(r['id']).toMatch(/REDACTED/);
   });
 });
 
@@ -94,15 +109,15 @@ describe('anonymizeContext', () => {
 describe('Batcher', () => {
   it('emits batch at threshold', () => {
     const b = new Batcher(3);
-    expect(b.add(makeRecord('a'))).toBeNull();
-    expect(b.add(makeRecord('b'))).toBeNull();
-    expect(b.add(makeRecord('c'))).toHaveLength(3);
+    expect(b.add(makeEnv('a'))).toBeNull();
+    expect(b.add(makeEnv('b'))).toBeNull();
+    expect(b.add(makeEnv('c'))).toHaveLength(3);
   });
 
   it('flush drains pending', () => {
     const b = new Batcher(10);
-    b.add(makeRecord('x'));
-    b.add(makeRecord('y'));
+    b.add(makeEnv('x'));
+    b.add(makeEnv('y'));
     expect(b.flush()).toHaveLength(2);
     expect(b.pendingCount).toBe(0);
   });
@@ -113,14 +128,14 @@ describe('Batcher', () => {
 describe('OfflineBuffer', () => {
   it('respects max capacity', () => {
     const buf = new OfflineBuffer(2);
-    expect(buf.enqueue(makeRecord('a'))).toBe(true);
-    expect(buf.enqueue(makeRecord('b'))).toBe(true);
-    expect(buf.enqueue(makeRecord('c'))).toBe(false);
+    expect(buf.enqueue(makeEnv('a'))).toBe(true);
+    expect(buf.enqueue(makeEnv('b'))).toBe(true);
+    expect(buf.enqueue(makeEnv('c'))).toBe(false);
   });
 
-  it('drain returns ready records', () => {
+  it('drain returns ready envelopes', () => {
     const buf = new OfflineBuffer(5);
-    buf.enqueue(makeRecord('x'));
+    buf.enqueue(makeEnv('x'));
     expect(buf.drain(Date.now() + 9999)).toHaveLength(1);
   });
 });
@@ -148,7 +163,7 @@ describe('CircuitBreaker', () => {
   it('transitions to half-open after resetMs', async () => {
     const cb = new CircuitBreaker(1, 10);
     cb.record(false);
-    await new Promise(r => setTimeout(r, 15));
+    await new Promise((r) => setTimeout(r, 15));
     expect(cb.state).toBe('half-open');
   });
 
@@ -165,7 +180,9 @@ describe('CircuitBreaker', () => {
 describe('Counter', () => {
   it('increments and resets', () => {
     const c = new Counter('test');
-    c.inc(); c.inc(); c.add(3);
+    c.inc();
+    c.inc();
+    c.add(3);
     expect(c.value).toBe(5);
     c.reset();
     expect(c.value).toBe(0);
@@ -229,16 +246,26 @@ describe('HookRegistry', () => {
 // ── RainyClient integration ───────────────────────────────────────────────────
 
 describe('RainyClient', () => {
-  const makeClient = () => new RainyClient({
-    clientId: 'test',
-    apiKey:   'test-key',
-    endpoint: 'https://api.rainy.test',
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
+
+  const makeClient = () =>
+    new RainyClient({
+      clientId: 'test',
+      apiKey: 'test-key',
+      endpoint: 'https://api.rainy.test',
+      flushIntervalMs: 60_000,
+    });
 
   it('exposes a live session', () => {
     const c = makeClient();
     expect(c.session.isActive).toBe(true);
     void c.destroy();
+  });
+
+  it('RainySdk is an alias of RainyClient', () => {
+    expect(RainySdk).toBe(RainyClient);
   });
 
   it('snapshot has expected keys', () => {
@@ -263,18 +290,20 @@ describe('RainyClient', () => {
     c.addActivator({ name: 'critical', tags: ['critical'], onActivate: fired });
     await c.trace({
       sessionId: c.session.id,
-      thought: 'This is a critical reasoning step that requires careful analysis of the data.',
+      thought:
+        'This is a critical reasoning step that requires careful analysis of the data.',
       tags: ['critical'],
     });
     expect(fired).toHaveBeenCalledOnce();
     void c.destroy();
   });
 
-  it('throws after destroy', async () => {
+  it('throws after destroy on trace', async () => {
     const c = makeClient();
     await c.destroy();
-    await expect(c.trace({ sessionId: c.session.id, thought: 'x'.repeat(50) }))
-      .rejects.toThrow('destroyed');
+    await expect(
+      c.trace({ sessionId: c.session.id, thought: 'x'.repeat(50) }),
+    ).rejects.toThrow('destroyed');
   });
 
   it('hook fires on trace:before', async () => {
@@ -283,6 +312,71 @@ describe('RainyClient', () => {
     c.hooks.on('trace:before', fn);
     await c.trace({ sessionId: c.session.id, thought: 'hi' });
     expect(fn).toHaveBeenCalledOnce();
+    void c.destroy();
+  });
+
+  it('telemetry.captureError enqueues and dedupes', async () => {
+    const captured = vi.fn();
+    const deduped = vi.fn();
+    const c = makeClient();
+    c.hooks.on('error:captured', captured);
+    c.hooks.on('error:deduped', deduped);
+
+    const err = new Error('boom from capture');
+    c.telemetry.captureError(err, { context: 'code_review' });
+    c.telemetry.captureError(err, { context: 'code_review' });
+
+    expect(captured).toHaveBeenCalledOnce();
+    expect(deduped).toHaveBeenCalledOnce();
+    expect(c.snapshot().counters['errors.captured']).toBe(1);
+    expect(c.snapshot().counters['errors.deduped']).toBe(1);
+    void c.destroy();
+  });
+
+  it('telemetry.track records events with scrubbed properties', async () => {
+    const tracked = vi.fn();
+    const c = makeClient();
+    c.hooks.on('event:tracked', tracked);
+    c.telemetry.addScrubber('secret', () => '[REDACTED]');
+    c.telemetry.track('feature_used', {
+      feature: 'diff-view',
+      secret: 'token-value',
+      email: 'dev@example.com',
+    });
+
+    expect(tracked).toHaveBeenCalledOnce();
+    const event = tracked.mock.calls[0]![0] as {
+      name: string;
+      properties: Record<string, unknown>;
+    };
+    expect(event.name).toBe('feature_used');
+    expect(event.properties['feature']).toBe('diff-view');
+    expect(event.properties['secret']).toBe('[REDACTED]');
+    expect(event.properties['email']).toBe('[REDACTED:email]');
+    expect(c.snapshot().counters['events.tracked']).toBe(1);
+    void c.destroy();
+  });
+
+  it('telemetry soft-fails after destroy', async () => {
+    const c = makeClient();
+    await c.destroy();
+    expect(() => c.telemetry.captureError(new Error('late'))).not.toThrow();
+    expect(() => c.telemetry.track('after_destroy')).not.toThrow();
+  });
+
+  it('scrubs paths in captured error stacks', () => {
+    const captured = vi.fn();
+    const c = makeClient();
+    c.hooks.on('error:captured', captured);
+
+    const err = new Error('path leak');
+    err.stack = `Error: path leak
+    at run (/Users/fer/Projects/mate-x/src/run.ts:10:1)`;
+    c.telemetry.captureError(err);
+
+    const report = captured.mock.calls[0]![0] as { stack?: string; message: string };
+    expect(report.stack ?? '').not.toContain('/Users/fer');
+    expect(report.stack ?? '').toMatch(/<HOME>|<PATH:/);
     void c.destroy();
   });
 });

@@ -1,20 +1,28 @@
-import type { TraceRecord } from '../types/public.js';
+import type { BatchEnvelope } from '../types/public.js';
 
+/**
+ * Size-threshold batch accumulator for mixed-kind envelopes
+ * (traces, errors, events).
+ */
 export class Batcher {
   readonly #size: number;
-  readonly #buf: TraceRecord[] = [];
+  readonly #buf: BatchEnvelope[] = [];
 
-  constructor(size: number) { this.#size = size; }
+  constructor(size: number) {
+    this.#size = size;
+  }
 
-  get pendingCount(): number { return this.#buf.length; }
+  get pendingCount(): number {
+    return this.#buf.length;
+  }
 
   /** Returns a full batch when threshold is hit, otherwise null. */
-  add(record: TraceRecord): TraceRecord[] | null {
-    this.#buf.push(record);
+  add(envelope: BatchEnvelope): BatchEnvelope[] | null {
+    this.#buf.push(envelope);
     return this.#buf.length >= this.#size ? this.flush() : null;
   }
 
-  flush(): TraceRecord[] {
+  flush(): BatchEnvelope[] {
     return this.#buf.splice(0, this.#buf.length);
   }
 }

@@ -11,15 +11,18 @@ export function buildTrace(
   clientId: ClientId,
   startedAt?: number,
 ): TraceRecord {
-  return {
-    id:           makeTraceId(randomUUID()),
-    sessionId:    input.sessionId,
+  const record: TraceRecord = {
+    id: makeTraceId(randomUUID()),
+    sessionId: input.sessionId,
     clientId,
-    thoughtHash:  sha256Hex(input.thought),
-    context:      anonymizeContext(input.context ?? {}),
-    tags:         input.tags ?? [],
+    thoughtHash: sha256Hex(input.thought),
+    context: anonymizeContext(input.context ?? {}),
+    tags: input.tags ?? [],
     qualityScore: scoreTrace(input),
-    timestamp:    input.timestamp ?? new Date().toISOString(),
-    durationMs:   startedAt !== undefined ? Date.now() - startedAt : undefined,
+    timestamp: input.timestamp ?? new Date().toISOString(),
   };
+  if (startedAt !== undefined) {
+    record.durationMs = Date.now() - startedAt;
+  }
+  return record;
 }

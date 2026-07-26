@@ -1,7 +1,13 @@
-import mitt from 'mitt';
+import mittFactory from 'mitt';
+import type { Emitter } from 'mitt';
 import type { HookEvent, HookHandler } from '../types/public.js';
 
 type Events = Record<HookEvent, unknown>;
+
+// mitt's CJS/ESM interop under NodeNext + verbatimModuleSyntax.
+const createEmitter = mittFactory as unknown as <
+  E extends Record<string | symbol, unknown>,
+>() => Emitter<E>;
 
 /**
  * Thin wrapper over `mitt` providing typed hook registration.
@@ -9,7 +15,7 @@ type Events = Record<HookEvent, unknown>;
  * to avoid blocking the hot trace path.
  */
 export class HookRegistry {
-  readonly #emitter = mitt<Events>();
+  readonly #emitter: Emitter<Events> = createEmitter<Events>();
 
   on<E extends HookEvent>(event: E, handler: HookHandler<Events[E]>): void {
     this.#emitter.on(event, handler as (payload: Events[E]) => void);

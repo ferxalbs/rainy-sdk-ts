@@ -1,4 +1,9 @@
 import type { TraceId, SessionId, ClientId } from './branded.js';
+import type {
+  ErrorReport,
+  TelemetryEvent,
+  TelemetryOptions,
+} from '../telemetry/types.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -6,9 +11,13 @@ export interface RainyClientOptions {
   clientId: string;
   apiKey: string;
   endpoint: string;
-  /** Max traces per HTTP batch. @default 25 */
+  /** Max envelopes per HTTP batch. @default 25 */
   batchSize?: number;
-  /** Auto-flush interval ms. @default 4000 */
+  /**
+   * Auto-flush interval (ms) for the shared batcher (traces + errors + events).
+   * Documented and configurable — the only implicit network activity.
+   * @default 4000
+   */
   flushIntervalMs?: number;
   /** HTTP retry attempts. @default 4 */
   maxRetries?: number;
@@ -20,6 +29,8 @@ export interface RainyClientOptions {
   circuitBreakerThreshold?: number;
   /** Circuit breaker: ms before half-open probe. @default 15000 */
   circuitBreakerResetMs?: number;
+  /** Error-reporting and event-tracking options. */
+  telemetry?: TelemetryOptions;
 }
 
 // ── Trace ────────────────────────────────────────────────────────────────────
@@ -56,7 +67,21 @@ export interface FlushResult {
   errors: Error[];
 }
 
-// ── Telemetry ────────────────────────────────────────────────────────────────
+// ── Unified batch envelope ───────────────────────────────────────────────────
+
+export type BatchKind = 'trace' | 'error' | 'event';
+
+export type BatchPayload = TraceRecord | ErrorReport | TelemetryEvent;
+
+export interface BatchEnvelope {
+  kind: BatchKind;
+  /** Stable id used for offline acknowledgement. */
+  id: string;
+  payload: BatchPayload;
+  createdAt: number;
+}
+
+// ── Telemetry snapshot (local metrics) ───────────────────────────────────────
 
 export interface TelemetrySnapshot {
   counters: Record<string, number>;
@@ -82,7 +107,10 @@ export type HookEvent =
   | 'circuit:open'
   | 'circuit:closed'
   | 'offline:enqueue'
-  | 'offline:drain';
+  | 'offline:drain'
+  | 'error:captured'
+  | 'error:deduped'
+  | 'event:tracked';
 
 export type HookHandler<T = unknown> = (payload: T) => void | Promise<void>;
 
@@ -96,3 +124,14 @@ export interface ActivatorRule {
   /** Optional callback executed when the activator fires. */
   onActivate?: (trace: TraceRecord) => void;
 }
+
+// Re-export telemetry types for consumers importing from the public surface
+export type {
+  Severity,
+  ErrorContext,
+  ErrorReport,
+  TelemetryPayload,
+  TelemetryEvent,
+  Scrubber,
+  TelemetryOptions,
+} from '../telemetry/types.js';

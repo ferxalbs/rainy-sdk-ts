@@ -1,7 +1,7 @@
 {
   "name": "rainy-sdk-ts",
-  "version": "0.2.0",
-  "description": "High-performance telemetry SDK for Rainy API — activators, counters, hooks, circuit breaker, offline buffer. Fills the gaps the OpenAI SDK never will.",
+  "version": "0.3.0",
+  "description": "High-performance telemetry SDK for Rainy API — error reporting, events, client-side sanitization, activators, counters, hooks, circuit breaker, offline buffer.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -48,6 +48,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",

@@ -1,7 +1,7 @@
-import type { TraceRecord } from './public.js';
+import type { BatchEnvelope } from './public.js';
 
 export interface QueueEntry {
-  record: TraceRecord;
+  envelope: BatchEnvelope;
   attempts: number;
   nextAttemptAt: number;
 }
