@@ -1,4 +1,4 @@
-# rainy-sdk-ts v0.3
+# Rainy SDK TS v0.3
 
 > **Telemetry-first SDK for Rainy API.**
 > Error reporting, schema-light events, **client-side sanitization**, activators, counters, hooks, circuit breaker, offline buffer, quality scoring — no OpenAI SDK dependency.
@@ -142,7 +142,7 @@ Built-in scrubbers redacts home paths, absolute paths, emails, IPs, UUIDs, and J
 
 ## Architecture
 
-```
+```plaintext
 src/
 ├── routes.ts             Single source of truth for relative API paths
 ├── types/
@@ -178,6 +178,10 @@ src/
 └── hooks/
     └── registry.ts       Typed mitt event bus
 ```
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for release history (Keep a Changelog).
 
 ## License
 
