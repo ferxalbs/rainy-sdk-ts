@@ -1,6 +1,6 @@
 {
   "name": "rainy-sdk-ts",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Telemetry and internal-logic instrumentation for AI products — privacy-safe observation without replacing provider SDKs.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -30,7 +30,8 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "bench": "vitest bench",
-    "prepublishOnly": "bun run typecheck && bun run test && bun run build"
+    "pack:check": "node scripts/check-package.mjs",
+    "prepublishOnly": "bun run typecheck && bun run test && bun run build && bun run pack:check"
   },
   "keywords": [
     "rainy",

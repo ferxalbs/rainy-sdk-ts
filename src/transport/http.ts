@@ -12,7 +12,7 @@ export interface HttpTransportOptions {
   maxRetries: number;
 }
 
-const SDK_VERSION = '0.4.0';
+const SDK_VERSION = '0.4.1';
 
 /** All envelope kinds share one authenticated ingestion route. */
 export function routeFor(kind: BatchKind): string {

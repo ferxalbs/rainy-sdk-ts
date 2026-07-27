@@ -5,6 +5,23 @@ All notable changes to **rainy-sdk-ts** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.1] — 2026-07-26
+
+### Security
+
+- Removed JavaScript and declaration sourcemaps from the npm artifact so the
+  original TypeScript source is not embedded verbatim in published tarballs.
+- Added a package-surface gate that rejects sourcemaps, source files, tests,
+  local configuration, and other files outside the explicit public allowlist.
+
+### Changed
+
+- Added tokenless npm publishing through GitHub Actions and OpenID Connect.
+  Release builds run typechecking, all tests, the production build, and the
+  package-surface gate before npm accepts a version.
+
+---
+
 ## [v0.4.0] — 2026-07-26
 
 ### Added
@@ -111,4 +128,5 @@ Initial v2 scaffold: thinking traces, quality scoring, activators, counters, hoo
 
 [v0.3.0]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.2.0...v0.3.0
 [v0.4.0]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.3.0...v0.4.0
+[v0.4.1]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.4.0...v0.4.1
 [v0.2.0]: https://github.com/ferxalbs/rainy-sdk-ts/releases/tag/v0.2.0
