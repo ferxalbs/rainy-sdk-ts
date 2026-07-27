@@ -87,6 +87,17 @@ export class RainyClient {
       isDestroyed: () => this.#destroyed,
       metrics: this.#metrics,
       hooks: this.#hooks,
+      request: <T>(
+        route: string,
+        init?: { method?: 'POST' | 'DELETE'; body?: unknown },
+      ) => {
+        if (this.#opts.delivery === 'local') {
+          return Promise.reject(
+            new Error('Remote telemetry APIs are unavailable when delivery is local.'),
+          );
+        }
+        return this.#transport.request<T>(route, init);
+      },
     });
 
     this.#startTimer();

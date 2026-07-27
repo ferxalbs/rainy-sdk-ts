@@ -101,6 +101,57 @@ export interface TelemetrySnapshot {
   uptimeMs: number;
 }
 
+// ── Feedback and consented training capture ─────────────────────────────────
+
+export interface FeedbackInput {
+  feedbackId?: string;
+  eventId?: string;
+  captureId?: string;
+  rating: 'like' | 'dislike' | 'neutral' | 'corrected';
+  category?: string;
+  labels?: string[];
+}
+
+export interface FeedbackResult {
+  feedbackId: string | null;
+  /** True only when a like referenced a consented, non-expired capture. */
+  promoted: boolean;
+}
+
+export interface TrainingConsentInput {
+  /** Stable UUID for safe retries. Generated when omitted. */
+  consentId?: string;
+  /** Customer-controlled stable subject identifier; only an HMAC is stored. */
+  subjectId: string;
+  policyVersion: string;
+  expiresAt?: string;
+}
+
+export interface TrainingConsent {
+  id: string;
+  purpose: 'model_training';
+  status: 'granted' | 'revoked';
+  policy_version: string;
+  granted_at: string;
+  expires_at: string | null;
+}
+
+export interface TrainingCaptureInput {
+  /** Stable UUID for safe retries. Generated when omitted. */
+  captureId?: string;
+  consentId: string;
+  requestId?: string;
+  prompt: string;
+  response?: string;
+}
+
+export interface TrainingCapture {
+  id: string;
+  captured_at: string;
+  expires_at: string;
+  sanitization_version: string;
+}
+
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
 export type HookEvent =

@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finish reasons, and Rainy billing headers without inspecting content.
 - Local-only delivery mode for embedded products that need sanitized hooks,
   counters, fingerprints, activators, and snapshots without network traffic.
+- Explicit `grantTrainingConsent`, `captureTrainingExample`, `sendFeedback`,
+  and `revokeTrainingConsent` APIs. A like can promote only an actively
+  consented encrypted capture.
+- Unified authenticated batch delivery through
+  `/api/v1/telemetry/batches`, reducing auth and rate-limit work per flush.
 - Operation tests covering result transparency, error identity, extractor
   isolation, privacy boundaries, provider response shapes, and local delivery.
 

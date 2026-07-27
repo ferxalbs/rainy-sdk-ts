@@ -44,6 +44,12 @@ export type {
   TelemetryEvent,
   Scrubber,
   TelemetryOptions,
+  FeedbackInput,
+  FeedbackResult,
+  TrainingConsentInput,
+  TrainingConsent,
+  TrainingCaptureInput,
+  TrainingCapture,
 } from './types/public.js';
 export type {
   TraceId,

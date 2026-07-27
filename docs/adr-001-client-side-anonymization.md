@@ -21,11 +21,12 @@ That model is insufficient for this SDK.
 
 ## Decision
 
-**All error reports and telemetry events are sanitized inside the SDK process
-before they enter the batcher, offline buffer, or HTTP transport.**
+**All ordinary traces, error reports, and telemetry events are sanitized inside
+the SDK process before they enter the batcher, offline buffer, or HTTP
+transport.**
 
-The SDK owns its privacy guarantees. It does not rely on the Rainy API (or any
-intermediate proxy) to strip PII after the fact.
+The SDK owns the first privacy boundary. The Rainy API applies an independent
+second sanitization boundary before persistence.
 
 Concretely:
 
@@ -53,8 +54,11 @@ Client-side anonymization defends against:
 
 - **Not** a substitute for TLS, API authentication, or least-privilege keys.
 - **Not** traffic-metadata anonymity (remote IP, timing, size still visible).
-- **Not** server-side DLP — the API may still apply its own policies; this is defense in depth, not mutual exclusion.
+- **Not** a replacement for server-side DLP — Rainy applies both boundaries.
 - **Not** perfect re-identification resistance against a determined adversary with side channels.
+- **Not** the policy for explicit consented training capture. That separate API
+  intentionally transmits caller-selected prompt/response content after
+  versioned consent; the server sanitizes, encrypts, expires, and quarantines it.
 
 ## Why this is atypical — and intentional
 
@@ -69,7 +73,9 @@ in coding agents and IDE-adjacent tools, the cost is wrong:
 1. Payloads may sit in in-memory offline queues during outages.
 2. Consumers frequently enable verbose HTTP logging during integration.
 3. Early API versions and staging endpoints may log more aggressively.
-4. The product promise is “your paths and emails never leave the machine in the clear” — that can only be enforced **before** `fetch`.
+4. For ordinary telemetry, the product promise is “your paths and emails do not
+   leave the machine in clear telemetry payloads” — that must be enforced
+   **before** `fetch`.
 
 ## Consequences
 

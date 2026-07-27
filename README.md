@@ -167,6 +167,39 @@ rainy.telemetry.track('review.completed', {
 
 Both APIs are fire-and-forget and never throw into product code.
 
+## Feedback and consented training examples
+
+A like is a quality signal, not training consent. Consent, encrypted capture,
+and feedback remain three explicit operations:
+
+```typescript
+const consent = await rainy.telemetry.grantTrainingConsent({
+  subjectId: customer.id, // Rainy stores only a tenant-scoped HMAC
+  policyVersion: '2026-07',
+});
+
+const capture = await rainy.telemetry.captureTrainingExample({
+  consentId: consent.id,
+  requestId: completion.response.headers.get('x-request-id')!,
+  prompt,
+  response: completion.data.choices[0]?.message.content ?? '',
+});
+
+const feedback = await rainy.telemetry.sendFeedback({
+  captureId: capture.id,
+  rating: 'like',
+  category: 'code-review',
+  labels: ['accurate', 'actionable'],
+});
+
+// true only when the capture still has active model-training consent
+console.log(feedback.promoted);
+```
+
+Content is never captured by `observe`, `track`, or `captureError`. The explicit
+training method sends it to a separate server-side vault where it is sanitized
+again, encrypted, retained for a bounded period, and quarantined before review.
+
 ## Thinking traces
 
 ```typescript
@@ -245,7 +278,7 @@ See [ADR-001](./docs/adr-001-client-side-anonymization.md) for the threat model.
 
 Remote delivery provides:
 
-- mixed trace/error/event batching;
+- one authenticated mixed trace/error/event request per batch;
 - retry with bounded jittered backoff;
 - three-state circuit breaker;
 - bounded in-memory offline buffer;

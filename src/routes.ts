@@ -4,16 +4,19 @@
  * Never hardcode path strings outside this module.
  */
 export const ROUTES = {
-  traces: '/v1/traces',
   telemetry: {
-    errors: '/v3.8/telemetry/errors',
-    events: '/v3.8/telemetry/events',
-    health: '/v3.8/telemetry/health',
+    batches: '/api/v1/telemetry/batches',
+    publicErrors: '/api/v1/telemetry/public/errors',
+    sessions: '/api/v1/telemetry/sessions',
+    feedback: '/api/v1/telemetry/feedback',
+  },
+  training: {
+    consents: '/api/v1/training/consents',
+    captures: '/api/v1/training/captures',
   },
 } as const;
 
 export type Routes = typeof ROUTES;
-export type TraceRoute = typeof ROUTES.traces;
 export type TelemetryRouteKey = keyof typeof ROUTES.telemetry;
 export type TelemetryRoute = (typeof ROUTES.telemetry)[TelemetryRouteKey];
 

@@ -1,12 +1,8 @@
 import { ROUTES, joinEndpoint } from '../routes.js';
-import { TELEMETRY_ROUTES } from '../telemetry/routes.js';
 import type {
   BatchEnvelope,
   BatchKind,
-  ErrorReport,
   FlushResult,
-  TelemetryEvent,
-  TraceRecord,
 } from '../types/public.js';
 import type { ApiResponse } from '../types/internal.js';
 
@@ -16,17 +12,15 @@ export interface HttpTransportOptions {
   maxRetries: number;
 }
 
-const SDK_VERSION = '0.3.0';
+const SDK_VERSION = '0.4.0';
 
-/** Map envelope kind → route constant from the SSoT table. */
+/** All envelope kinds share one authenticated ingestion route. */
 export function routeFor(kind: BatchKind): string {
   switch (kind) {
     case 'trace':
-      return ROUTES.traces;
     case 'error':
-      return TELEMETRY_ROUTES.errors;
     case 'event':
-      return TELEMETRY_ROUTES.events;
+      return ROUTES.telemetry.batches;
     default: {
       const _exhaustive: never = kind;
       return _exhaustive;
@@ -50,8 +44,8 @@ export class HttpTransport {
   }
 
   /**
-   * Send a mixed-kind batch. Envelopes are partitioned by kind and each
-   * non-empty partition is POSTed to its route constant.
+   * Send a mixed-kind batch in one request. This keeps one auth/rate-limit
+   * operation per flush and lets the server correlate events atomically.
    */
   async send(batch: BatchEnvelope[]): Promise<FlushResult> {
     const result: FlushResult = {
@@ -64,22 +58,41 @@ export class HttpTransport {
 
     if (batch.length === 0) return result;
 
-    const partitions = partitionByKind(batch);
-
-    for (const kind of KIND_ORDER) {
-      const items = partitions.get(kind);
-      if (items === undefined || items.length === 0) continue;
-
-      const part = await this.#sendKind(kind, items);
-      result.submitted += part.submitted;
-      result.failed += part.failed;
-      result.errors.push(...part.errors);
-    }
-
-    return result;
+    return this.#sendBatch(batch);
   }
 
-  async #sendKind(kind: BatchKind, items: BatchEnvelope[]): Promise<FlushResult> {
+  async request<T>(
+    route: string,
+    init: { method?: 'POST' | 'DELETE'; body?: unknown } = {},
+  ): Promise<T> {
+    const url = joinEndpoint(this.#endpoint, route);
+    const body = init.body === undefined ? undefined : JSON.stringify(init.body);
+    let attempt = 0;
+
+    while (attempt <= this.#maxRetries) {
+      try {
+        const response = await fetch(url, {
+          method: init.method ?? 'POST',
+          headers: this.#headers,
+          ...(body === undefined ? {} : { body }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (response.ok) return (await response.json()) as T;
+        if (response.status >= 400 && response.status < 500) {
+          throw new NonRetryableHttpError(response.status, response.statusText);
+        }
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      } catch (error) {
+        if (error instanceof NonRetryableHttpError || ++attempt > this.#maxRetries) {
+          throw error;
+        }
+        await sleep(jitteredBackoff(attempt));
+      }
+    }
+    throw new Error('Rainy telemetry request failed');
+  }
+
+  async #sendBatch(items: BatchEnvelope[]): Promise<FlushResult> {
     const result: FlushResult = {
       submitted: 0,
       skipped: 0,
@@ -88,8 +101,8 @@ export class HttpTransport {
       errors: [],
     };
 
-    const url = joinEndpoint(this.#endpoint, routeFor(kind));
-    const body = serializeKind(kind, items);
+    const url = joinEndpoint(this.#endpoint, ROUTES.telemetry.batches);
+    const body = JSON.stringify({ items });
     let attempt = 0;
 
     while (attempt <= this.#maxRetries) {
@@ -130,38 +143,10 @@ export class HttpTransport {
   }
 }
 
-const KIND_ORDER: readonly BatchKind[] = ['trace', 'error', 'event'];
-
-function partitionByKind(
-  batch: BatchEnvelope[],
-): Map<BatchKind, BatchEnvelope[]> {
-  const map = new Map<BatchKind, BatchEnvelope[]>();
-  for (const env of batch) {
-    const list = map.get(env.kind);
-    if (list) list.push(env);
-    else map.set(env.kind, [env]);
-  }
-  return map;
-}
-
-function serializeKind(kind: BatchKind, items: BatchEnvelope[]): string {
-  switch (kind) {
-    case 'trace':
-      return JSON.stringify({
-        traces: items.map((e) => e.payload as TraceRecord),
-      });
-    case 'error':
-      return JSON.stringify({
-        items: items.map((e) => e.payload as ErrorReport),
-      });
-    case 'event':
-      return JSON.stringify({
-        items: items.map((e) => e.payload as TelemetryEvent),
-      });
-    default: {
-      const _exhaustive: never = kind;
-      return _exhaustive;
-    }
+class NonRetryableHttpError extends Error {
+  constructor(status: number, statusText: string) {
+    super(`HTTP ${status} ${statusText}`);
+    this.name = 'NonRetryableHttpError';
   }
 }
 

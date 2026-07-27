@@ -7,10 +7,12 @@ import { makeClientId, makeErrorId, makeEventId, makeFingerprint, makeSessionId,
 
 describe('ROUTES / TELEMETRY_ROUTES', () => {
   it('exposes the expected relative paths', () => {
-    expect(ROUTES.traces).toBe('/v1/traces');
-    expect(TELEMETRY_ROUTES.errors).toBe('/v3.8/telemetry/errors');
-    expect(TELEMETRY_ROUTES.events).toBe('/v3.8/telemetry/events');
-    expect(TELEMETRY_ROUTES.health).toBe('/v3.8/telemetry/health');
+    expect(TELEMETRY_ROUTES.batches).toBe('/api/v1/telemetry/batches');
+    expect(TELEMETRY_ROUTES.publicErrors).toBe('/api/v1/telemetry/public/errors');
+    expect(TELEMETRY_ROUTES.sessions).toBe('/api/v1/telemetry/sessions');
+    expect(TELEMETRY_ROUTES.feedback).toBe('/api/v1/telemetry/feedback');
+    expect(ROUTES.training.consents).toBe('/api/v1/training/consents');
+    expect(ROUTES.training.captures).toBe('/api/v1/training/captures');
   });
 
   it('TELEMETRY_ROUTES is the same object as ROUTES.telemetry', () => {
@@ -18,20 +20,20 @@ describe('ROUTES / TELEMETRY_ROUTES', () => {
   });
 
   it('joinEndpoint strips trailing slashes and joins once', () => {
-    expect(joinEndpoint('https://api.example.com/', ROUTES.traces)).toBe(
-      'https://api.example.com/v1/traces',
+    expect(joinEndpoint('https://api.example.com/', TELEMETRY_ROUTES.batches)).toBe(
+      'https://api.example.com/api/v1/telemetry/batches',
     );
-    expect(joinEndpoint('https://api.example.com', TELEMETRY_ROUTES.errors)).toBe(
-      'https://api.example.com/v3.8/telemetry/errors',
+    expect(joinEndpoint('https://api.example.com', ROUTES.training.consents)).toBe(
+      'https://api.example.com/api/v1/training/consents',
     );
   });
 });
 
 describe('routeFor', () => {
   it('maps kinds to route constants only', () => {
-    expect(routeFor('trace')).toBe(ROUTES.traces);
-    expect(routeFor('error')).toBe(TELEMETRY_ROUTES.errors);
-    expect(routeFor('event')).toBe(TELEMETRY_ROUTES.events);
+    expect(routeFor('trace')).toBe(TELEMETRY_ROUTES.batches);
+    expect(routeFor('error')).toBe(TELEMETRY_ROUTES.batches);
+    expect(routeFor('event')).toBe(TELEMETRY_ROUTES.batches);
   });
 });
 
@@ -40,7 +42,7 @@ describe('HttpTransport URL resolution', () => {
     vi.unstubAllGlobals();
   });
 
-  it('POSTs each kind to endpoint + route constant (no hardcoded full URLs)', async () => {
+  it('POSTs mixed envelopes once to the authenticated batch route', async () => {
     const calls: { url: string; body: unknown }[] = [];
     vi.stubGlobal(
       'fetch',
@@ -50,7 +52,7 @@ describe('HttpTransport URL resolution', () => {
           body: JSON.parse(String(init?.body ?? '{}')),
         });
         return new Response(
-          JSON.stringify({ ok: true, accepted: 1, rejected: 0 }),
+          JSON.stringify({ success: true, accepted: 3, rejected: 0 }),
           { status: 200 },
         );
       }),
@@ -115,12 +117,14 @@ describe('HttpTransport URL resolution', () => {
     const result = await transport.send(batch);
     expect(result.submitted).toBe(3);
     expect(calls.map((c) => c.url)).toEqual([
-      'https://api.rainy.test/v1/traces',
-      'https://api.rainy.test/v3.8/telemetry/errors',
-      'https://api.rainy.test/v3.8/telemetry/events',
+      'https://api.rainy.test/api/v1/telemetry/batches',
     ]);
-    expect(calls[0]!.body).toHaveProperty('traces');
-    expect(calls[1]!.body).toHaveProperty('items');
-    expect(calls[2]!.body).toHaveProperty('items');
+    expect(calls[0]!.body).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({ kind: 'trace' }),
+        expect.objectContaining({ kind: 'error' }),
+        expect.objectContaining({ kind: 'event' }),
+      ]),
+    });
   });
 });

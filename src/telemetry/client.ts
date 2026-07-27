@@ -13,6 +13,16 @@ import type {
   TelemetryPayload,
 } from './types.js';
 import type { ObserveOptions } from './operation.js';
+import { randomUUID } from 'node:crypto';
+import type {
+  FeedbackInput,
+  FeedbackResult,
+  TrainingCapture,
+  TrainingCaptureInput,
+  TrainingConsent,
+  TrainingConsentInput,
+} from '../types/public.js';
+import { ROUTES } from '../routes.js';
 
 export interface TelemetryInit {
   clientId: ClientId;
@@ -26,6 +36,10 @@ export interface TelemetryInit {
   isDestroyed: () => boolean;
   metrics: TelemetryAggregator;
   hooks: HookRegistry;
+  request: <T>(
+    route: string,
+    init?: { method?: 'POST' | 'DELETE'; body?: unknown },
+  ) => Promise<T>;
 }
 
 /**
@@ -44,6 +58,8 @@ export class Telemetry {
   readonly #isDestroyed: () => boolean;
   readonly #metrics: TelemetryAggregator;
   readonly #hooks: HookRegistry;
+  readonly #request: TelemetryInit['request'];
+  readonly #getSessionId: () => SessionId;
 
   readonly #cCaptured: { inc(): void };
   readonly #cDeduped: { inc(): void };
@@ -78,6 +94,8 @@ export class Telemetry {
     this.#isDestroyed = init.isDestroyed;
     this.#metrics = init.metrics;
     this.#hooks = init.hooks;
+    this.#request = init.request;
+    this.#getSessionId = init.getSessionId;
 
     this.#cCaptured = this.#metrics.counter('errors.captured');
     this.#cDeduped = this.#metrics.counter('errors.deduped');
@@ -226,6 +244,66 @@ export class Telemetry {
   }
 
   /**
+   * Store product feedback. A like is only a quality label; promotion happens
+   * server-side and only when `captureId` has active model-training consent.
+   */
+  async sendFeedback(input: FeedbackInput): Promise<FeedbackResult> {
+    const response = await this.#request<ApiResult<{ feedbackId: string | null; promoted: boolean }>>(
+      ROUTES.telemetry.feedback,
+      {
+        body: {
+          ...input,
+          feedbackId: input.feedbackId ?? randomUUID(),
+          sessionId: this.#getSessionId(),
+          labels: input.labels ?? [],
+        },
+      },
+    );
+    return requireData(response);
+  }
+
+  /** Record explicit, versioned model-training consent. */
+  async grantTrainingConsent(input: TrainingConsentInput): Promise<TrainingConsent> {
+    const response = await this.#request<ApiResult<{ consent: TrainingConsent }>>(
+      ROUTES.training.consents,
+      {
+        body: {
+          ...input,
+          consentId: input.consentId ?? randomUUID(),
+          purpose: 'model_training',
+        },
+      },
+    );
+    return requireData(response).consent;
+  }
+
+  /** Revoke consent and invalidate every candidate derived from it. */
+  async revokeTrainingConsent(consentId: string): Promise<void> {
+    await this.#request(
+      `${ROUTES.training.consents}/${encodeURIComponent(consentId)}`,
+      { method: 'DELETE' },
+    );
+  }
+
+  /**
+   * Capture a prompt/response only after explicit consent. The server sanitizes
+   * again and stores encrypted content outside telemetry tables.
+   */
+  async captureTrainingExample(input: TrainingCaptureInput): Promise<TrainingCapture> {
+    const response = await this.#request<ApiResult<{ capture: TrainingCapture }>>(
+      ROUTES.training.captures,
+      {
+        body: {
+          ...input,
+          captureId: input.captureId ?? randomUUID(),
+          sessionId: this.#getSessionId(),
+        },
+      },
+    );
+    return requireData(response).capture;
+  }
+
+  /**
    * Register a pure key-level scrubber (runs after built-in scrubbers).
    * Throws TypeError on invalid registration (config path — fail fast).
    */
@@ -250,6 +328,18 @@ export class Telemetry {
     }
     return this.#flush();
   }
+}
+
+interface ApiResult<T> {
+  success: boolean;
+  data?: T;
+}
+
+function requireData<T>(response: ApiResult<T>): T {
+  if (!response.success || response.data === undefined) {
+    throw new Error('Rainy telemetry API returned an invalid response.');
+  }
+  return response.data;
 }
 
 function operationErrorMetadata(error: unknown): TelemetryPayload {
