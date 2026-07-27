@@ -207,6 +207,10 @@ export class RainyClient {
   // ── Private ──────────────────────────────────────────────────────────────
 
   async #enqueue(envelope: BatchEnvelope): Promise<void> {
+    if (this.#opts.delivery === 'local') {
+      this.#metrics.counter('local.accepted').inc();
+      return;
+    }
     const batch = this.#batcher.add(envelope);
     if (batch && batch.length > 0) await this.#sendBatch(batch);
   }

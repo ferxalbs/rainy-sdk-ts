@@ -5,6 +5,10 @@ export const ClientOptionsSchema: z.ZodObject<{
   clientId: z.ZodString;
   apiKey: z.ZodString;
   endpoint: z.ZodURL;
+  delivery: z.ZodDefault<z.ZodEnum<{
+    remote: 'remote';
+    local: 'local';
+  }>>;
   batchSize: z.ZodDefault<z.ZodNumber>;
   flushIntervalMs: z.ZodDefault<z.ZodNumber>;
   maxRetries: z.ZodDefault<z.ZodNumber>;
@@ -25,6 +29,7 @@ export const ClientOptionsSchema: z.ZodObject<{
   clientId: z.string().min(1),
   apiKey: z.string().min(1),
   endpoint: z.url(),
+  delivery: z.enum(['remote', 'local']).default('remote'),
   batchSize: z.number().int().min(1).max(500).default(25),
   flushIntervalMs: z.number().int().min(500).default(4_000),
   maxRetries: z.number().int().min(0).max(10).default(4),

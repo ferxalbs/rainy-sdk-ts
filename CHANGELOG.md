@@ -5,6 +5,37 @@ All notable changes to **rainy-sdk-ts** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.0] — 2026-07-26
+
+### Added
+
+- `telemetry.observe(name, operation, options)` for instrumenting provider SDK
+  calls, tools, workflows, embeddings, or arbitrary product logic without
+  changing their result/error contract.
+- Structural `extractAiResponseTelemetry()` adapter for OpenAI-, Anthropic-, and
+  Rainy-shaped responses. It extracts tokens, cache/reasoning usage, tool counts,
+  finish reasons, and Rainy billing headers without inspecting content.
+- Local-only delivery mode for embedded products that need sanitized hooks,
+  counters, fingerprints, activators, and snapshots without network traffic.
+- Operation tests covering result transparency, error identity, extractor
+  isolation, privacy boundaries, provider response shapes, and local delivery.
+
+### Changed
+
+- Package remains telemetry-first and explicitly does not replace OpenAI,
+  Anthropic, or other provider SDKs.
+- Package export paths now match the `.mjs` / `.d.mts` artifacts emitted by
+  tsdown, so both ESM import and CommonJS require resolve after installation.
+- Package version bumped to **0.4.0**.
+
+### Security
+
+- AI metadata extraction never reads prompts, messages, generated text, code,
+  repository content, or tool arguments.
+- Failed instrumentation and extraction never alter application control flow.
+
+---
+
 ## [v0.3.0] — 2026-07-26
 
 ### Added
@@ -74,4 +105,5 @@ Initial v2 scaffold: thinking traces, quality scoring, activators, counters, hoo
 ---
 
 [v0.3.0]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.2.0...v0.3.0
+[v0.4.0]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.3.0...v0.4.0
 [v0.2.0]: https://github.com/ferxalbs/rainy-sdk-ts/releases/tag/v0.2.0

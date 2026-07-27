@@ -1,16 +1,16 @@
 {
   "name": "rainy-sdk-ts",
-  "version": "0.3.0",
-  "description": "High-performance telemetry SDK for Rainy API — error reporting, events, client-side sanitization, activators, counters, hooks, circuit breaker, offline buffer.",
+  "version": "0.4.0",
+  "description": "Telemetry and internal-logic instrumentation for AI products — privacy-safe observation without replacing provider SDKs.",
   "type": "module",
   "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
     ".": {
       "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
       },
       "require": {
         "types": "./dist/index.d.cts",
@@ -29,12 +29,18 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "bench": "vitest bench"
+    "bench": "vitest bench",
+    "prepublishOnly": "bun run typecheck && bun run test && bun run build"
   },
   "keywords": [
     "rainy",
     "sdk",
     "telemetry",
+    "observability",
+    "instrumentation",
+    "agents",
+    "llm",
+    "privacy",
     "tracing",
     "ai",
     "activators",
@@ -43,6 +49,17 @@
   ],
   "author": "ferxalbs",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ferxalbs/rainy-sdk-ts.git"
+  },
+  "homepage": "https://github.com/ferxalbs/rainy-sdk-ts#readme",
+  "bugs": {
+    "url": "https://github.com/ferxalbs/rainy-sdk-ts/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "mitt": "^3.0.1",
     "zod": "^4.4.3"

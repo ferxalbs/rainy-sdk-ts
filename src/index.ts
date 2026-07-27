@@ -1,8 +1,5 @@
 /**
- * rainy-sdk-ts v0.3 — public surface
- * Telemetry-first SDK: error reporting, events, activators, counters,
- * hooks, circuit breaker. Client-side sanitization before transport.
- * Does NOT wrap OpenAI SDK logic — fills its blind spots instead.
+ * rainy-sdk-ts v0.4 — telemetry and internal-logic instrumentation for AI apps.
  */
 
 // Core
@@ -10,8 +7,10 @@ export { RainyClient } from './core/client.js';
 export { RainyClient as RainySdk } from './core/client.js';
 export { RainySession } from './core/session.js';
 
+// Generative API
 // Telemetry (error reporting + events)
 export { Telemetry } from './telemetry/client.js';
+export { extractAiResponseTelemetry } from './telemetry/operation.js';
 export { Sanitizer, redactPath } from './telemetry/sanitizer.js';
 export { TELEMETRY_ROUTES } from './telemetry/routes.js';
 export { ROUTES, joinEndpoint } from './routes.js';
@@ -54,3 +53,8 @@ export type {
   EventId,
   Fingerprint,
 } from './types/branded.js';
+export type {
+  TelemetryOperationKind,
+  ObserveOptions,
+  AiResponseTelemetry,
+} from './telemetry/operation.js';

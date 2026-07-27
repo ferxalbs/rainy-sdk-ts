@@ -1,35 +1,27 @@
-# Rainy SDK TS v0.3
+# Rainy SDK for TypeScript
 
-> **Telemetry-first SDK for Rainy API.**
-> Error reporting, schema-light events, **client-side sanitization**, activators, counters, hooks, circuit breaker, offline buffer, quality scoring — no OpenAI SDK dependency.
+Telemetry and internal-logic instrumentation for AI products.
 
-## Breaking change (0.2 → 0.3)
+`rainy-sdk-ts` does **not** replace the OpenAI, Anthropic, or provider SDK your
+application already uses. It wraps your existing operations to add privacy-safe
+observability, error intelligence, counters, quality signals, activators,
+offline resilience, and product-specific hooks without changing their results.
 
-`client.telemetry` is now the **error/event API** (`captureError`, `track`, `addScrubber`).
-Local counters remain available via `client.snapshot()`. `TelemetryAggregator` is still exported for advanced use.
-`RainySdk` is an alias of `RainyClient`.
+## The difference
 
-## Why not just wrap the OpenAI SDK?
+Provider SDKs answer: “How do I call the model?”
 
-The OpenAI SDK handles completions. It doesn't know about:
+Rainy answers:
 
-- *When* to record a trace (activators)
-- *How many* traces fired per scenario (counters)
-- *Resilience* when the telemetry endpoint is down (circuit breaker + offline buffer)
-- *Quality filtering* before traces leave the process
-- *Hooks* for custom observability pipelines
-
-This SDK owns exactly those concerns — nothing more.
-
-## Stack
-
-| Tool | Role |
-| ------ | ------ |
-| **TypeScript 5.5** `erasableSyntaxOnly` | Native JS emit, no runtime type baggage |
-| **tsdown** (Oxc + Rolldown) | Sub-100ms builds |
-| **vitest** | Native ESM, fast test runner |
-| **zod v4** | Runtime config validation, zero-cost types |
-| **mitt** | 130-byte typed event bus |
+- Which product workflow invoked it?
+- How long did the complete internal operation take?
+- How many input, output, cached, and reasoning tokens were used?
+- Which tools ran and how did the operation finish?
+- What did Rainy charge?
+- Which failures repeat across machines?
+- Which signals should activate a product workflow?
+- How can the application observe this without sending prompts, code, paths,
+  credentials, or generated text?
 
 ## Install
 
@@ -39,149 +31,269 @@ npm install rainy-sdk-ts
 bun add rainy-sdk-ts
 ```
 
-## Quick Start
+Requires Node.js 22 or newer.
+
+## Observe existing SDK calls
 
 ```typescript
-import { RainySdk } from 'rainy-sdk-ts';
+import OpenAI from 'openai';
+import {
+  RainyClient,
+  extractAiResponseTelemetry,
+} from 'rainy-sdk-ts';
 
-const rainy = new RainySdk({
-  clientId: 'mate-x',
-  apiKey:   'rny_...',
-  endpoint: 'https://api.rainy.enosis.dev', // base URL once; routes are internal constants
+const openai = new OpenAI({
+  apiKey: process.env.RAINY_API_KEY,
+  baseURL: process.env.RAINY_API_URL,
 });
 
-// Error reporting (stack paths / emails scrubbed before leave-process)
+const rainy = new RainyClient({
+  clientId: 'mate-x',
+  apiKey: process.env.RAINY_API_KEY!,
+  endpoint: process.env.RAINY_TELEMETRY_URL!,
+});
+
+const result = await rainy.telemetry.observe(
+  'code-review.generate',
+  () =>
+    openai.chat.completions
+      .create({
+        model: 'openai/gpt-5',
+        messages,
+        tools,
+      })
+      .withResponse(),
+  {
+    kind: 'llm',
+    attributes: {
+      feature: 'code-review',
+      mode: 'guided',
+    },
+    extractResult: extractAiResponseTelemetry,
+  },
+);
+
+// The wrapped result is unchanged.
+const completion = result.data;
+```
+
+`extractAiResponseTelemetry` reads only operational metadata:
+
+- response/model identifiers;
+- input, output, total, cached, and reasoning tokens;
+- tool-call count and finish reasons;
+- Rainy request id, billing plan, credits, and daily remaining headers.
+
+It deliberately never reads messages, prompts, generated text, tool arguments,
+repository content, or code.
+
+## Instrument internal logic
+
+`observe` works with any synchronous or asynchronous operation, not only model
+calls:
+
+```typescript
+const findings = await rainy.telemetry.observe(
+  'repository.attack-surface',
+  () => scanRepository(workspace),
+  {
+    kind: 'workflow',
+    attributes: {
+      scanner: 'attack-surface',
+      repositoryKind: 'typescript',
+    },
+    extractResult: (result) => ({
+      findingCount: result.findings.length,
+      criticalCount: result.findings.filter(
+        (finding) => finding.severity === 'critical',
+      ).length,
+    }),
+  },
+);
+```
+
+Rainy returns the original value. If the operation fails, it rethrows the exact
+same error after recording:
+
+- duration and operation classification;
+- safe status/code metadata;
+- a sanitized error report;
+- a stable path-independent fingerprint for deduplication.
+
+Telemetry extraction failures are isolated and never break application logic.
+
+## Local mode for embedded products
+
+MaTE X can adopt Rainy instrumentation before a remote collector is enabled:
+
+```typescript
+const rainy = new RainyClient({
+  clientId: 'mate-x',
+  apiKey: 'unused-in-local-mode',
+  endpoint: 'https://collector.invalid',
+  delivery: 'local',
+});
+
+rainy.hooks.on('event:tracked', (event) => {
+  localAuditLog.append(event);
+});
+```
+
+In `local` mode, sanitization, observation, hooks, counters, activators, error
+fingerprints, and snapshots work normally, but the SDK performs no HTTP.
+
+Use `delivery: 'remote'` with an actual Rainy telemetry collector to enable
+batch delivery, circuit breaking, and offline buffering.
+
+## Errors and product events
+
+```typescript
 try {
-  // ...
-} catch (err) {
-  rainy.telemetry.captureError(err, { context: 'code_review', severity: 'error' });
+  await runAgent();
+} catch (error) {
+  rainy.telemetry.captureError(error, {
+    context: 'agent-loop',
+    severity: 'error',
+    tags: ['agent', 'tool-loop'],
+    extra: { mode: 'auto' },
+  });
 }
 
-// Schema-light events + property scrubbers
-rainy.telemetry.addScrubber('customField', () => '[REDACTED]');
-rainy.telemetry.track('feature_used', { feature: 'diff-view', customField: 'secret' });
+rainy.telemetry.track('review.completed', {
+  findingCount: 8,
+  durationBucket: '10-30s',
+});
+```
 
-// Thinking traces (quality-filtered)
+Both APIs are fire-and-forget and never throw into product code.
+
+## Thinking traces
+
+```typescript
 await rainy.trace({
   sessionId: rainy.session.id,
-  thought:   'I need to verify the user identity before proceeding with the payment.',
-  context:   { step: 'auth', model: 'gpt-4o' },
-  tags:      ['reasoning', 'critical'],
+  thought:
+    'The authentication boundary must be checked before applying the patch.',
+  context: {
+    stage: 'security-review',
+    model: 'openai/gpt-5',
+  },
+  tags: ['reasoning', 'security'],
+});
+```
+
+The raw thought is SHA-256 hashed before transport. Context passes through the
+same sanitizer used for errors and events. Low-quality traces are dropped using
+`minQualityScore`.
+
+## Activators
+
+Activators turn telemetry signals into local product behavior:
+
+```typescript
+rainy.addActivator({
+  name: 'critical-security-reasoning',
+  tags: ['reasoning', 'security', 'critical'],
+  onActivate: (trace) => {
+    queueHumanReview(trace.id);
+  },
+});
+```
+
+This keeps workflow logic local. The SDK does not ask a provider to own the
+client’s internal orchestration.
+
+## Hooks and local snapshots
+
+```typescript
+rainy.hooks.on('error:captured', (report) => {
+  console.log(report.fingerprint);
 });
 
-// Local counters / circuit state
+rainy.hooks.on('event:tracked', (event) => {
+  if (event.name === 'operation.completed') {
+    // Product-specific integration.
+  }
+});
+
 console.log(rainy.snapshot());
-
-await rainy.destroy();
 ```
 
-### Auto-flush
+Lifecycle hooks include trace, batch, flush, circuit, offline, error, and event
+signals. Observed operations are emitted through `event:tracked` with event
+names `operation.started`, `operation.completed`, and `operation.failed`.
 
-A single interval timer (`flushIntervalMs`, default 4000 ms) flushes the shared
-batcher for **traces, errors, and events**. It is the only network activity not
-explicitly initiated by the consumer, and it is fully configurable.
+## Client-side privacy boundary
 
-## API Reference
+Sanitization happens before batching, offline buffering, hooks that receive
+transport envelopes, or HTTP:
 
-### `new RainyClient(opts)`
+- home and absolute paths;
+- emails;
+- IPv4 and IPv6 addresses;
+- UUIDs;
+- JWTs;
+- caller-defined sensitive fields.
 
-| Option | Type | Default | Description |
-| -------- | ------ | --------- | ------------- |
-| `clientId` | `string` | required | App client ID |
-| `apiKey` | `string` | required | API key |
-| `endpoint` | `string` | required | Base URL |
-| `batchSize` | `number` | `25` | Traces per batch |
-| `flushIntervalMs` | `number` | `4000` | Auto-flush ms |
-| `maxRetries` | `number` | `4` | HTTP retries |
-| `offlineBufferSize` | `number` | `500` | Offline queue cap |
-| `minQualityScore` | `number` | `0.35` | Min score [0–1] |
-| `circuitBreakerThreshold` | `number` | `5` | Failures to open |
-| `circuitBreakerResetMs` | `number` | `15000` | Half-open probe ms |
-
-### `.telemetry.captureError(error, context?)` → `void`
-
-Sanitized error report with stack normalization and fingerprint dedupe.
-
-### `.telemetry.track(event, properties?)` → `void`
-
-Schema-light event; properties deep-scrubbed before enqueue.
-
-### `.telemetry.addScrubber(key, fn)` / `.removeScrubber(key)`
-
-Register pure property-level scrubbers (run after built-ins).
-
-### `.trace(input)` → `Promise<void>`
-
-Record a thinking trace. Drops traces below `minQualityScore`.
-
-### `.flush()` → `Promise<FlushResult>`
-
-Force-flush all pending + offline envelopes (all kinds).
-
-### `.snapshot()` → `TelemetrySnapshot`
-
-Instant counters (including `errors.*` / `events.*`), activations, circuit state, uptime.
-
-### `.addActivator(rule)` / `.removeActivator(name)`
-
-Register tag-based rules that fire callbacks on matching traces.
-
-### `.hooks.on(event, handler)`
-
-Lifecycle hooks including `error:captured`, `error:deduped`, `event:tracked`, plus trace/flush/circuit/offline events.
-
-### `.destroy()` → `Promise<FlushResult>`
-
-Flush + teardown. Traces throw after destroy; telemetry soft-fails (safe for process-exit hooks).
-
-## Client-side privacy
-
-See [docs/adr-001-client-side-anonymization.md](./docs/adr-001-client-side-anonymization.md).
-Built-in scrubbers redacts home paths, absolute paths, emails, IPs, UUIDs, and JWTs
-**before** any payload enters the batcher or network.
-
-## Architecture
-
-```plaintext
-src/
-├── routes.ts             Single source of truth for relative API paths
-├── types/
-│   ├── branded.ts        TraceId, SessionId, ClientId, ErrorId, EventId, Fingerprint
-│   ├── public.ts         Full public type surface + BatchEnvelope
-│   ├── internal.ts       Queue + API shapes
-│   └── schema.ts         Zod v4 config validation
-├── core/
-│   ├── client.ts         RainyClient — orchestrator
-│   ├── session.ts        Session lifecycle
-│   └── trace.ts          TraceRecord builder
-├── crypto/
-│   └── hasher.ts         SHA-256
-├── pipeline/
-│   ├── anonymizer.ts     Context redaction (delegates to Sanitizer)
-│   ├── scorer.ts         Quality scoring
-│   └── batcher.ts        Mixed-kind batch accumulator
-├── transport/
-│   ├── http.ts           Fetch + multi-kind route dispatch + retry
-│   ├── offline.ts        In-memory offline buffer
-│   └── circuit-breaker.ts  3-state circuit breaker
-├── telemetry/
-│   ├── client.ts         Public Telemetry facade
-│   ├── routes.ts         TELEMETRY_ROUTES re-export
-│   ├── sanitizer.ts      Pluggable scrubbing pipeline
-│   ├── fingerprint.ts    Error fingerprint + DedupCache
-│   ├── error-capture.ts  captureError pipeline
-│   ├── event-tracker.ts  track pipeline
-│   ├── types.ts          Severity, ErrorReport, TelemetryEvent
-│   ├── counter.ts        Monotonic named counter
-│   ├── activator.ts      Tag-based rule engine
-│   └── aggregator.ts     Counter registry (internal metrics)
-└── hooks/
-    └── registry.ts       Typed mitt event bus
+```typescript
+rainy.telemetry.addScrubber('customerSecret', () => '[REDACTED]');
 ```
 
-## Changelog
+See [ADR-001](./docs/adr-001-client-side-anonymization.md) for the threat model.
 
-See [CHANGELOG.md](./CHANGELOG.md) for release history (Keep a Changelog).
+## Resilience
+
+Remote delivery provides:
+
+- mixed trace/error/event batching;
+- retry with bounded jittered backoff;
+- three-state circuit breaker;
+- bounded in-memory offline buffer;
+- explicit `flush()` and `destroy()`;
+- a single unref’d auto-flush timer.
+
+```typescript
+await rainy.flush();
+const finalState = await rainy.destroy();
+```
+
+## Main options
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `clientId` | required | Product/application identity |
+| `apiKey` | required | Telemetry collector credential |
+| `endpoint` | required | Collector origin |
+| `delivery` | `remote` | `remote` or network-free `local` |
+| `batchSize` | `25` | Envelopes per batch |
+| `flushIntervalMs` | `4000` | Auto-flush interval |
+| `maxRetries` | `4` | Collector retries |
+| `offlineBufferSize` | `500` | In-memory fallback capacity |
+| `minQualityScore` | `0.35` | Trace quality threshold |
+| `circuitBreakerThreshold` | `5` | Failures before opening |
+| `circuitBreakerResetMs` | `15000` | Half-open probe delay |
+
+## What Rainy deliberately does not do
+
+- It does not provide `chat.completions.create`.
+- It does not replace provider streaming.
+- It does not execute tools or own agent loops.
+- It does not capture prompts, outputs, code, or tool arguments automatically.
+- It does not hide provider-specific controls behind a lowest-common-denominator
+  API.
+
+Use the best provider SDK for model calls. Use Rainy for the operational and
+product intelligence around those calls.
+
+## Development
+
+```bash
+bun install
+bun run typecheck
+bun run test
+bun run build
+npm pack --dry-run
+```
 
 ## License
 

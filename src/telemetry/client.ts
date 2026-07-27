@@ -12,6 +12,7 @@ import type {
   Scrubber,
   TelemetryPayload,
 } from './types.js';
+import type { ObserveOptions } from './operation.js';
 
 export interface TelemetryInit {
   clientId: ClientId;
@@ -154,6 +155,77 @@ export class Telemetry {
   }
 
   /**
+   * Instrument arbitrary async logic without replacing its client or changing
+   * its return value. Only metadata supplied through attributes/extractResult
+   * is tracked; prompts, generated text, and code are never inspected.
+   */
+  async observe<T>(
+    name: string,
+    operation: () => T | PromiseLike<T>,
+    options?: ObserveOptions<T>,
+  ): Promise<T> {
+    const startedAt = Date.now();
+    const kind = options?.kind ?? 'custom';
+
+    if (options?.trackStart === true) {
+      this.track('operation.started', {
+        ...options.attributes,
+        operation: name,
+        kind,
+      });
+    }
+
+    try {
+      const result = await operation();
+      let extracted: TelemetryPayload = {};
+      let extractionFailed = false;
+      if (options?.extractResult !== undefined) {
+        try {
+          extracted = options.extractResult(result);
+        } catch {
+          extractionFailed = true;
+        }
+      }
+
+      this.track('operation.completed', {
+        ...options?.attributes,
+        ...extracted,
+        ...(extractionFailed ? { telemetryExtractionFailed: true } : {}),
+        operation: name,
+        kind,
+        status: 'ok',
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    } catch (error) {
+      const safeError = operationErrorMetadata(error);
+      this.track('operation.failed', {
+        ...options?.attributes,
+        ...safeError,
+        operation: name,
+        kind,
+        status: 'error',
+        durationMs: Date.now() - startedAt,
+      });
+
+      if (options?.captureError !== false) {
+        this.captureError(error, {
+          context: name,
+          ...options?.errorContext,
+          extra: {
+            ...options?.attributes,
+            ...safeError,
+            operation: name,
+            kind,
+            durationMs: Date.now() - startedAt,
+          },
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Register a pure key-level scrubber (runs after built-in scrubbers).
    * Throws TypeError on invalid registration (config path — fail fast).
    */
@@ -178,4 +250,19 @@ export class Telemetry {
     }
     return this.#flush();
   }
+}
+
+function operationErrorMetadata(error: unknown): TelemetryPayload {
+  if (error === null || typeof error !== 'object') {
+    return { errorType: typeof error };
+  }
+  const record = error as Record<string, unknown>;
+  return {
+    ...(typeof record.name === 'string' ? { errorName: record.name } : {}),
+    ...(typeof record.code === 'string' ? { errorCode: record.code } : {}),
+    ...(typeof record.status === 'number' ? { errorStatus: record.status } : {}),
+    ...(typeof record.statusCode === 'number'
+      ? { errorStatus: record.statusCode }
+      : {}),
+  };
 }

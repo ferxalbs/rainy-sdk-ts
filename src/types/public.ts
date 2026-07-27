@@ -11,6 +11,12 @@ export interface RainyClientOptions {
   clientId: string;
   apiKey: string;
   endpoint: string;
+  /**
+   * `local` runs sanitization, hooks, counters, and observation without HTTP.
+   * `remote` batches to the configured telemetry collector.
+   * @default "remote"
+   */
+  delivery?: 'remote' | 'local';
   /** Max envelopes per HTTP batch. @default 25 */
   batchSize?: number;
   /**
