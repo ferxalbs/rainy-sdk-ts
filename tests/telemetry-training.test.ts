@@ -56,6 +56,7 @@ describe('feedback and consented training APIs', () => {
       apiKey: 'rainy-key',
       endpoint: 'https://api.rainy.test',
       flushIntervalMs: 60_000,
+      telemetry: { sessionTracking: false },
     });
     const consent = await client.telemetry.grantTrainingConsent({
       subjectId: 'customer-42',
@@ -140,6 +141,7 @@ describe('feedback and consented training APIs', () => {
       endpoint: 'https://api.rainy.test',
       flushIntervalMs: 60_000,
       maxRetries: 1,
+      telemetry: { sessionTracking: false },
     });
     const consent = await client.telemetry.grantTrainingConsent({
       subjectId: 'customer-42',

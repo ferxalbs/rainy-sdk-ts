@@ -23,6 +23,7 @@ export const ClientOptionsSchema: z.ZodObject<{
       maxStringBytes: z.ZodOptional<z.ZodNumber>;
       maxEventNameLength: z.ZodOptional<z.ZodNumber>;
       builtInScrubbers: z.ZodOptional<z.ZodBoolean>;
+      sessionTracking: z.ZodOptional<z.ZodBoolean>;
     }>
   >;
 }> = z.object({
@@ -44,6 +45,7 @@ export const ClientOptionsSchema: z.ZodObject<{
       maxStringBytes: z.number().int().min(64).max(1_048_576).optional(),
       maxEventNameLength: z.number().int().min(1).max(512).optional(),
       builtInScrubbers: z.boolean().optional(),
+      sessionTracking: z.boolean().optional(),
     })
     .optional(),
 });

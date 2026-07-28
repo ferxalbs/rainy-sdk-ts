@@ -84,6 +84,11 @@ export interface TelemetryOptions {
   maxEventNameLength?: number;
   /** Enable built-in path/email/IP/UUID scrubbers. @default true */
   builtInScrubbers?: boolean;
+  /**
+   * Report this SDK instance as one product session. Start/end delivery is
+   * best-effort and never changes application control flow. @default true
+   */
+  sessionTracking?: boolean;
 }
 
 export interface ResolvedTelemetryOptions {
@@ -92,6 +97,7 @@ export interface ResolvedTelemetryOptions {
   maxStringBytes: number;
   maxEventNameLength: number;
   builtInScrubbers: boolean;
+  sessionTracking: boolean;
 }
 
 export const DEFAULT_TELEMETRY_OPTIONS: ResolvedTelemetryOptions = {
@@ -100,6 +106,7 @@ export const DEFAULT_TELEMETRY_OPTIONS: ResolvedTelemetryOptions = {
   maxStringBytes: 8_192,
   maxEventNameLength: 128,
   builtInScrubbers: true,
+  sessionTracking: true,
 };
 
 export function resolveTelemetryOptions(
@@ -120,5 +127,7 @@ export function resolveTelemetryOptions(
       p.maxEventNameLength ?? DEFAULT_TELEMETRY_OPTIONS.maxEventNameLength,
     builtInScrubbers:
       p.builtInScrubbers ?? DEFAULT_TELEMETRY_OPTIONS.builtInScrubbers,
+    sessionTracking:
+      p.sessionTracking ?? DEFAULT_TELEMETRY_OPTIONS.sessionTracking,
   };
 }

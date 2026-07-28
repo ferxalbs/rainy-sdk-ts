@@ -12,7 +12,7 @@ export interface HttpTransportOptions {
   maxRetries: number;
 }
 
-const SDK_VERSION = '0.4.1';
+export const SDK_VERSION = '0.4.2';
 
 /** All envelope kinds share one authenticated ingestion route. */
 export function routeFor(kind: BatchKind): string {
@@ -63,19 +63,25 @@ export class HttpTransport {
 
   async request<T>(
     route: string,
-    init: { method?: 'POST' | 'DELETE'; body?: unknown } = {},
+    init: {
+      method?: 'POST' | 'DELETE';
+      body?: unknown;
+      retry?: boolean;
+      timeoutMs?: number;
+    } = {},
   ): Promise<T> {
     const url = joinEndpoint(this.#endpoint, route);
     const body = init.body === undefined ? undefined : JSON.stringify(init.body);
+    const maxRetries = init.retry === false ? 0 : this.#maxRetries;
     let attempt = 0;
 
-    while (attempt <= this.#maxRetries) {
+    while (attempt <= maxRetries) {
       try {
         const response = await fetch(url, {
           method: init.method ?? 'POST',
           headers: this.#headers,
           ...(body === undefined ? {} : { body }),
-          signal: AbortSignal.timeout(10_000),
+          signal: AbortSignal.timeout(init.timeoutMs ?? 10_000),
         });
         if (response.ok) return (await response.json()) as T;
         if (response.status >= 400 && response.status < 500) {
@@ -83,7 +89,7 @@ export class HttpTransport {
         }
         throw new Error(`HTTP ${response.status} ${response.statusText}`);
       } catch (error) {
-        if (error instanceof NonRetryableHttpError || ++attempt > this.#maxRetries) {
+        if (error instanceof NonRetryableHttpError || ++attempt > maxRetries) {
           throw error;
         }
         await sleep(jitteredBackoff(attempt));

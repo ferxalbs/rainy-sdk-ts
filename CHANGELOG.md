@@ -5,6 +5,29 @@ All notable changes to **rainy-sdk-ts** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.2] — 2026-07-28
+
+### Added
+
+- Automatic best-effort session start/completion reporting for remote clients.
+- Server-owned product metrics for daily opens, active clients, session
+  duration, operation failures, and observed flow performance.
+- `telemetry.sessionTracking` opt-out for products that manage lifecycle
+  reporting separately.
+
+### Security
+
+- Session reporting never throws into application startup or shutdown.
+- The SDK sends lifecycle timestamps and generic operation metadata only.
+  Duration policy, KPI definitions, aggregation, and flow analysis remain
+  private Rainy server logic.
+
+### Changed
+
+- Package version and `X-Rainy-SDK` identity advanced to **0.4.2**.
+
+---
+
 ## [v0.4.1] — 2026-07-26
 
 ### Security
@@ -129,4 +152,5 @@ Initial v2 scaffold: thinking traces, quality scoring, activators, counters, hoo
 [v0.3.0]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.2.0...v0.3.0
 [v0.4.0]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.3.0...v0.4.0
 [v0.4.1]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.4.0...v0.4.1
+[v0.4.2]: https://github.com/ferxalbs/rainy-sdk-ts/compare/v0.4.1...v0.4.2
 [v0.2.0]: https://github.com/ferxalbs/rainy-sdk-ts/releases/tag/v0.2.0

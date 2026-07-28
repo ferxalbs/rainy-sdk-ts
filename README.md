@@ -7,6 +7,12 @@ application already uses. It wraps your existing operations to add privacy-safe
 observability, error intelligence, counters, quality signals, activators,
 offline resilience, and product-specific hooks without changing their results.
 
+In remote mode, each client instance also reports a best-effort session start
+and completion. Rainy computes app opens, session duration, daily activity,
+failure rates, and flow performance on the server. Those product rules are not
+embedded in the public SDK, and collector failures never escape into application
+startup, operations, or shutdown.
+
 ## The difference
 
 Provider SDKs answer: “How do I call the model?”
@@ -167,6 +173,22 @@ rainy.telemetry.track('review.completed', {
 
 Both APIs are fire-and-forget and never throw into product code.
 
+Use stable, product-owned names for the journeys you want to understand:
+
+```typescript
+await rainy.telemetry.observe(
+  'review.create',
+  () => createReview(),
+  {
+    kind: 'workflow',
+    attributes: { feature: 'review', entryPoint: 'command-palette' },
+  },
+);
+```
+
+The SDK sends generic lifecycle and operation metadata. Rainy owns aggregation
+into opens per day, completed sessions, duration, failures, and flow conversion.
+
 ## Feedback and consented training examples
 
 A like is a quality signal, not training consent. Consent, encrypted capture,
@@ -283,7 +305,8 @@ Remote delivery provides:
 - three-state circuit breaker;
 - bounded in-memory offline buffer;
 - explicit `flush()` and `destroy()`;
-- a single unref’d auto-flush timer.
+- a single unref’d auto-flush timer;
+- best-effort session start/end reporting that never throws.
 
 ```typescript
 await rainy.flush();
@@ -305,6 +328,9 @@ const finalState = await rainy.destroy();
 | `minQualityScore` | `0.35` | Trace quality threshold |
 | `circuitBreakerThreshold` | `5` | Failures before opening |
 | `circuitBreakerResetMs` | `15000` | Half-open probe delay |
+
+Set `telemetry.sessionTracking` to `false` to disable automatic remote session
+start/end reports. Local delivery never performs session network calls.
 
 ## What Rainy deliberately does not do
 

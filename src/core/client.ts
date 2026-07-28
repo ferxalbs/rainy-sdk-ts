@@ -11,6 +11,7 @@ import { Activator } from '../telemetry/activator.js';
 import { Counter } from '../telemetry/counter.js';
 import { Telemetry } from '../telemetry/client.js';
 import { resolveTelemetryOptions } from '../telemetry/types.js';
+import { ROUTES } from '../routes.js';
 import { HookRegistry } from '../hooks/registry.js';
 import type {
   RainyClientOptions,
@@ -35,6 +36,7 @@ export class RainyClient {
   readonly #activator: Activator;
   readonly #hooks: HookRegistry;
   readonly #telemetryApi: Telemetry;
+  readonly #sessionTracking: boolean;
 
   // Built-in counters
   readonly #cTotal: Counter;
@@ -75,6 +77,7 @@ export class RainyClient {
     this.#cFlush = this.#metrics.counter('flush.count');
 
     const telemetryOpts = resolveTelemetryOptions(this.#opts.telemetry);
+    this.#sessionTracking = telemetryOpts.sessionTracking;
 
     this.#telemetryApi = new Telemetry({
       clientId: this.#clientId,
@@ -101,6 +104,7 @@ export class RainyClient {
     });
 
     this.#startTimer();
+    void this.#reportSession('active');
   }
 
   // ── Public getters ───────────────────────────────────────────────────────
@@ -212,6 +216,7 @@ export class RainyClient {
     this.#stopTimer();
     this.#session.end();
     this.#destroyed = true;
+    await this.#reportSession('completed');
     return result;
   }
 
@@ -266,11 +271,40 @@ export class RainyClient {
     }
   }
 
+  /**
+   * Session reporting is deliberately isolated from the event facade. The
+   * server owns duration, retention, and product-success calculations.
+   */
+  async #reportSession(status: 'active' | 'completed'): Promise<void> {
+    if (!this.#sessionTracking || this.#opts.delivery === 'local') return;
+    try {
+      await this.#transport.request(ROUTES.telemetry.sessions, {
+        retry: false,
+        timeoutMs: 2_000,
+        body: {
+          sessionId: this.#session.id,
+          clientId: safeSessionClientId(this.#clientId),
+          status,
+          startedAt: new Date(this.#session.createdAt).toISOString(),
+          ...(status === 'completed'
+            ? { endedAt: new Date().toISOString() }
+            : {}),
+        },
+      });
+    } catch {
+      // Telemetry must never affect product logic or surface collector errors.
+    }
+  }
+
   #assertAlive(): void {
     if (this.#destroyed) {
       throw new Error('RainyClient is destroyed — instantiate a new one.');
     }
   }
+}
+
+function safeSessionClientId(clientId: string): string {
+  return /^[A-Za-z0-9_.:-]{1,128}$/.test(clientId) ? clientId : 'unknown';
 }
 
 function wrapTrace(record: TraceRecord): BatchEnvelope {

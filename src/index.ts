@@ -1,5 +1,5 @@
 /**
- * rainy-sdk-ts v0.4 — telemetry and internal-logic instrumentation for AI apps.
+ * rainy-sdk-ts v0.4.2 — telemetry and internal-logic instrumentation for AI apps.
  */
 
 // Core
@@ -14,7 +14,7 @@ export { extractAiResponseTelemetry } from './telemetry/operation.js';
 export { Sanitizer, redactPath } from './telemetry/sanitizer.js';
 export { TELEMETRY_ROUTES } from './telemetry/routes.js';
 export { ROUTES, joinEndpoint } from './routes.js';
-export { routeFor } from './transport/http.js';
+export { routeFor, SDK_VERSION } from './transport/http.js';
 
 // Local metrics (counters / activators)
 export { Activator } from './telemetry/activator.js';

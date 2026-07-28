@@ -256,6 +256,7 @@ describe('RainyClient', () => {
       apiKey: 'test-key',
       endpoint: 'https://api.rainy.test',
       flushIntervalMs: 60_000,
+      telemetry: { sessionTracking: false },
     });
 
   it('exposes a live session', () => {
